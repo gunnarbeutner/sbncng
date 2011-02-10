@@ -1,27 +1,37 @@
-'''
-Created on 07.02.2011
-
-@author: Gunnar
-'''
-
 class Event(object):
-    Continue = 1
-    Handled = 2
+    """Multicast delegate used to handle events."""
+    
+    # Returned by an event handler to signal that we should
+    # continue to invoke the remaining event handlers.
+    CONTINUE = 1
+    
+    # Returned by an event handler to signal that no
+    # further event handlers should be called.
+    HANDLED = 2
 
     def __init__(self):
         self.handlers = set()
-        
-    def __add__(self, other):
-        self.handlers.add(other)
     
-    def __sub__(self, other):
-        self.handlers.remove(other)
+    def add_handler(self, other):
+        """Registers an event handler."""
         
-    def __call__(self, sender, eventargs):
+        self.handlers.add(other)
+        return self
+    
+    def remove_handler(self, other):
+        """Removes a handler from this event."""
+        
+        self.handlers.remove(other)
+        return self
+    
+    def invoke(self, source, **kwargs):
+        """
+        Invokes the event handlers. Returns True if all event handlers
+        were invoked, or False if one of them returned Event.HANDLED.
+        """
+
         for handler in self.handlers:
-            result = handler(sender, eventargs)
-            
-            if result == Event.Handled:
+            if handler(source, **kwargs) == Event.HANDLED:
                 return False
             
         return True
