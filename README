@@ -1,5 +1,5 @@
--Async sockets: pkg asynchat
+-Async sockets: gevent
 -TCL: pkg Tkinter
--Async DNS: Threads?
--SSL: pkg ssl
+-Async DNS: gevent
+-SSL: pkg gevent.ssl
 -xml-rpc: pkg xmlrpc
