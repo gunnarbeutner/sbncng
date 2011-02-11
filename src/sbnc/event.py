@@ -28,21 +28,17 @@ class Event(object):
         were invoked, or False if one of them returned Event.HANDLED.
         """
 
-        assert source != None
+        # TODO: figure out whether we want to catch exceptions here
+        # and log them in a user-friendly fashion
 
-        self.source = source
-
-        try:
-            for k in sorted(self.handlers.keys()):
-                for handler in self.handlers[k]:
-                    self._handlers_stopped = False
-                    
-                    handler(self, **kwargs)
-                    
-                    if self._handlers_stopped:
-                        return False
-        finally:
-            del self.source
+        for k in sorted(self.handlers.keys()):
+            for handler in self.handlers[k]:
+                self._handlers_stopped = False
+                
+                handler(self, source, **kwargs)
+                
+                if self._handlers_stopped:
+                    return False
 
         return True
         

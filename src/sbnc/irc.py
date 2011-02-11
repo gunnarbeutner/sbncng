@@ -13,21 +13,13 @@ class BaseIRCConnection(object):
     socket_addr = None
     
     registered = False
+    attempted_nickname = None
     nickname = None
     username = None
     password = None
     hostname = None
     realname = None
-    
-    rpls = {
-        'RPL_WELCOME': (1, 'Welcome to the Internet Relay Network %s!%s@%s'),
-        'ERR_UNKNOWNCOMMAND': (421, 'Unknown command'),
-        'ERR_NONICKNAMEGIVEN': (431, 'No nickname given'),
-        'ERR_ERRONEUSNICKNAME': (432, 'Erroneous nickname'),
-        'ERR_NEEDMOREPARAMS': (461, 'Not enough parameters.'),
-        'ERR_ALREADYREGISTRED': (462, 'Unauthorized command (already registered)')
-    }
-    
+        
     _registration_timeout = None
 
     def __init__(self, **kwargs):
@@ -64,16 +56,11 @@ class BaseIRCConnection(object):
         while True:
             try:
                 line = self.connection.readline()
-                
+
                 if not line:
                     break
-                
-                prefix, command, params = utils.parse_irc_message(line.rstrip('\r\n'))
-                
-                print prefix, command, params
-                
-                self.handle_command(command, prefix, params)
-            
+
+                self.process_line(line)
             except RegistrationTimeoutError:
                 self.handle_registration_timeout()
 
@@ -81,9 +68,24 @@ class BaseIRCConnection(object):
         
         self.connection_closed_event.invoke(self)
 
+    def process_line(self, line):
+        prefix, command, params = utils.parse_irc_message(line.rstrip('\r\n'))
+        
+        print prefix, command, params
+
+        command = command.upper()
+                
+        if not self.command_received_event.invoke(self, command=command, prefix=prefix, params=params):
+            return
+        
+        if command in self.command_events:
+            self.command_events[command].invoke(self, prefix=prefix, params=params)
+        else:
+            self.handle_unknown_command(prefix, command, params)
+
     def get_hostmask(self):
         # TODO: figure out what to do if we don't have all those vars yet
-        return "%s!%s@%s" % (self.nickname, self.username, self.hostname)
+        return utils.format_hostmask( (self.nickname, self.username, self.hostname) )
 
     def send_message(self, command, *parameter_list, **prefix):
         params = list(parameter_list)
@@ -91,7 +93,7 @@ class BaseIRCConnection(object):
         message = ''
         
         if 'prefix' in prefix:
-            message = ':' + prefix['prefix'] + ' '
+            message = ':' + utils.format_hostmask(prefix['prefix']) + ' '
         
         message = message + command
         
@@ -108,25 +110,8 @@ class BaseIRCConnection(object):
         self._registration_timeout = gevent.Timeout(60, RegistrationTimeoutError)
         self._registration_timeout.start()
 
-    def handle_command(self, command, prefix, params):
-        command = command.upper()
-        
-        if not self.command_received_event.invoke(self, command=command, prefix=prefix, params=params):
-            return
-        
-        if command in self.command_events:
-            if not self.command_events[command].invoke(self, prefix=prefix, params=params):
-                return
-        
-        try:
-            handler = getattr(self, 'irc_' + command)
-        except AttributeError:
-            handler = None
-        
-        if handler:
-            handler(prefix, params)
-        else:
-            self.irc_unknown(prefix, command, params)
+    def handle_unknown_command(self, command, prefix, params):
+        pass
 
     def register_user(self):
         self.registered = True
@@ -142,6 +127,12 @@ class BaseIRCConnection(object):
     def close(self, message=None):
         self.socket.shutdown(socket.SHUT_RDWR)
         self.socket.close()
+        
+    def add_command_handler(self, command, handler, priority=Event.NORMAL_PRIORITY):
+        self.command_events[command].add_handler(handler, priority)
+        
+    def remove_command_handler(self, command, handler):
+        self.command_events[command].remove_handler(handler)
 
 class IRCClientConnection(BaseIRCConnection):
     new_connection_event = Event()
@@ -153,10 +144,12 @@ class IRCClientConnection(BaseIRCConnection):
         if not IRCClientConnection.new_connection_event.invoke(self):
             return
         
+        IRCClientConnection.CommandHandlers.register_handlers(self)
+        
         BaseIRCConnection.handle_connection_made(self)
 
-        if self.nickname == None:
-            raise ValueError('nickname attribute not set')
+        if self.attempted_nickname == None:
+            raise ValueError('attempted_nickname attribute not set')
         
         if self.username == None:
             raise ValueError('username attribute not set')
@@ -168,29 +161,62 @@ class IRCClientConnection(BaseIRCConnection):
             self.send_message('PASS', self.password)
             
         self.send_message('USER', self.username, '0', '*', self.realname)
-        self.send_message('NICK', self.nickname)
+        self.send_message('NICK', self.attempted_nickname)
 
     def close(self, message=None):
         self.send_message('QUIT', message)
         BaseIRCConnection.close(self, message)
-        
-    def irc_PING(self, prefix, params):
-        if len(params) < 1:
-            return
-
-        self.send_message('PONG', params[0])
-
-    def irc_001(self, prefix, params):
-        self.register_user()
-
-    def irc_unknown(self, prefix, command, params):
+    
+    def handle_unknown_command(self, prefix, command, params):
         print "No idea how to handle this: command=", command, " - params=", params
+
+    class CommandHandlers(object):
+        def register_handlers(ircobj):
+            ircobj.add_command_handler('PING', IRCClientConnection.CommandHandlers.irc_PING, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('001', IRCClientConnection.CommandHandlers.irc_001, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('NICK', IRCClientConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
+        
+        register_handlers = staticmethod(register_handlers)
+        
+        def irc_PING(event, ircobj, prefix, params):
+            if len(params) < 1:
+                return
+    
+            ircobj.send_message('PONG', params[0])
+            
+        irc_PING = staticmethod(irc_PING)
+    
+        def irc_001(event, ircobj, prefix, params):
+            ircobj.nickname = ircobj.attempted_nickname
+            ircobj.attempted_nickname = None
+    
+            ircobj.register_user()
+    
+        irc_001 = staticmethod(irc_001)
+    
+        def irc_NICK(event, ircobj, prefix, params):
+            if len(params) < 1 or prefix == None:
+                return
+            
+            if prefix[0] == ircobj.nickname:
+                ircobj.nickname = prefix[0]
+
+        irc_NICK = staticmethod(irc_NICK)
 
 class IRCServerConnection(BaseIRCConnection):
     new_connection_event = Event()
 
     DEFAULT_SERVERNAME = 'server.shroudbnc.info'
     servername = DEFAULT_SERVERNAME
+
+    rpls = {
+        'RPL_WELCOME': (1, 'Welcome to the Internet Relay Network %s!%s@%s'),
+        'ERR_UNKNOWNCOMMAND': (421, 'Unknown command'),
+        'ERR_NONICKNAMEGIVEN': (431, 'No nickname given'),
+        'ERR_ERRONEUSNICKNAME': (432, 'Erroneous nickname'),
+        'ERR_NEEDMOREPARAMS': (461, 'Not enough parameters.'),
+        'ERR_ALREADYREGISTRED': (462, 'Unauthorized command (already registered)')
+    }
 
     def __init__(self, **kwargs):
         BaseIRCConnection.__init__(self, **kwargs)
@@ -203,7 +229,7 @@ class IRCServerConnection(BaseIRCConnection):
         if nickname == None:
             nickname = '*'
         
-        command = BaseIRCConnection.rpls[rpl][0]
+        command = IRCServerConnection.rpls[rpl][0]
         
         try:
             command = str(int(command)).rjust(3, '0')
@@ -211,9 +237,9 @@ class IRCServerConnection(BaseIRCConnection):
             pass
         
         if 'format_args' in format_args:
-            text = BaseIRCConnection.rpls[rpl][1] % format_args['format_args']
+            text = IRCServerConnection.rpls[rpl][1] % format_args['format_args']
         else:
-            text = BaseIRCConnection.rpls[rpl][1]
+            text = IRCServerConnection.rpls[rpl][1]
         
         return self.send_message(command, *[nickname] + list(params) + [text], \
                                 **{'prefix': IRCServerConnection.servername})
@@ -222,6 +248,8 @@ class IRCServerConnection(BaseIRCConnection):
         if not IRCServerConnection.new_connection_event.invoke(self):
             return
         
+        IRCServerConnection.CommandHandlers.register_handlers(self)
+        
         BaseIRCConnection.handle_connection_made(self)
                 
         self.send_message('NOTICE', 'AUTH', '*** sbncng 0.1 - (c) 2011 Gunnar Beutner')
@@ -229,6 +257,7 @@ class IRCServerConnection(BaseIRCConnection):
 
         try:
             self.send_message('NOTICE', 'AUTH', '*** Looking up your hostname')
+            # TODO: need to figure out how to do IPv6 reverse lookups
             result = dns.resolve_reverse(socket.inet_aton(self.hostname))
             self.hostname = result[1]
             self.send_message('NOTICE', 'AUTH', '*** Found your hostname')
@@ -268,58 +297,75 @@ class IRCServerConnection(BaseIRCConnection):
     def authenticate_user(self):
         return True
 
-    def irc_USER(self, prefix, params):
-        if len(params) < 4:
-            self.send_reply('ERR_NEEDMOREPARAMS', 'USER')
-            return
+    def handle_unknown_command(self, prefix, command, params):
+        self.send_reply('ERR_UNKNOWNCOMMAND', command)    
 
-        if self.registered:
-            self.send_reply('ERR_ALREADYREGISTRED')
-            return
+    class CommandHandlers(object):
+        def register_handlers(ircobj):
+            ircobj.add_command_handler('USER', IRCServerConnection.CommandHandlers.irc_USER, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('NICK', IRCServerConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('PASS', IRCServerConnection.CommandHandlers.irc_PASS, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('QUIT', IRCServerConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
+        
+        register_handlers = staticmethod(register_handlers)
 
-        self.username = params[0]
-        self.realname = params[3]
+        def irc_USER(event, ircobj, prefix, params):
+            if len(params) < 4:
+                ircobj.send_reply('ERR_NEEDMOREPARAMS', 'USER')
+                return
         
-        self.register_user()
-    
-    def irc_unknown(self, prefix, command, params):
-        self.send_reply('ERR_UNKNOWNCOMMAND', command)
-    
-    def irc_NICK(self, prefix, params):
-        if len(params) < 1:
-            self.send_reply('ERR_NONICKNAMEGIVEN', 'NICK')
-            return
-
-        if params[0] == self.nickname:
-            return
+            if ircobj.registered:
+                ircobj.send_reply('ERR_ALREADYREGISTRED')
+                return
         
-        if ' ' in params[0]:
-            self.send_reply('ERR_ERRONEUSNICKNAME', params[0])
-            return
-        
-        if not self.registered:
-            self.nickname = params[0]
-            self.register_user()
-        else:
-            self.send_message('NICK', params[0], prefix=self.get_hostmask())
-            self.nickname = params[0]
-
-    def irc_PASS(self, prefix, params):
-        if len(params) < 1:
-            self.send_reply('ERR_NEEDMOREPARAMS', 'PASS')
-            return
-        
-        if self.registered:
-            self.send_reply('ERR_ALREADYREGISTRED')
-            return
+            ircobj.username = params[0]
+            ircobj.realname = params[3]
             
-        self.password = params[0]
-
-        self.register_user()
-
-    def irc_QUIT(self, prefix, params):
-        self.close('Goodbye.')
-
+            ircobj.register_user()
+        
+        irc_USER = staticmethod(irc_USER)
+        
+        def irc_NICK(event, ircobj, source, params):
+            if len(params) < 1:
+                ircobj.send_reply('ERR_NONICKNAMEGIVEN', 'NICK')
+                return
+        
+            if params[0] == ircobj.nickname:
+                return
+            
+            if ' ' in params[0]:
+                ircobj.send_reply('ERR_ERRONEUSNICKNAME', params[0])
+                return
+            
+            if not ircobj.registered:
+                ircobj.nickname = params[0]
+                ircobj.register_user()
+            else:
+                ircobj.send_message('NICK', params[0], source=ircobj.get_hostmask())
+                ircobj.nickname = params[0]
+        
+        irc_NICK = staticmethod(irc_NICK)
+        
+        def irc_PASS(event, ircobj, prefix, params):
+            if len(params) < 1:
+                ircobj.send_reply('ERR_NEEDMOREPARAMS', 'PASS')
+                return
+            
+            if ircobj.registered:
+                ircobj.send_reply('ERR_ALREADYREGISTRED')
+                return
+                
+            ircobj.password = params[0]
+        
+            ircobj.register_user()
+        
+        irc_PASS = staticmethod(irc_PASS)
+        
+        def irc_QUIT(event, ircobj, prefix, params):
+            ircobj.close('Goodbye.')
+            
+        irc_QUIT = staticmethod(irc_QUIT)
+            
 class IRCServerListener(object):
     def __init__(self, bind_address):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
