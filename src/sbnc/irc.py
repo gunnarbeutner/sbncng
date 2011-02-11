@@ -133,6 +133,8 @@ class BaseIRCConnection(object):
 
         self._registration_timeout.cancel()
         self._registration_timeout = None
+        
+        self.registration_successful_event.invoke(self)
 
     def handle_registration_timeout(self):
         self.close('Registration timeout detected.')
@@ -142,13 +144,13 @@ class BaseIRCConnection(object):
         self.socket.close()
 
 class IRCClientConnection(BaseIRCConnection):
-    connection_made_event = Event()
+    new_connection_event = Event()
 
     DEFAULT_REALNAME = 'sbncng client'
     realname = DEFAULT_REALNAME
 
     def handle_connection_made(self):
-        if not IRCClientConnection.connection_made_event.invoke(self):
+        if not IRCClientConnection.new_connection_event.invoke(self):
             return
         
         BaseIRCConnection.handle_connection_made(self)
@@ -185,7 +187,7 @@ class IRCClientConnection(BaseIRCConnection):
         print "No idea how to handle this: command=", command, " - params=", params
 
 class IRCServerConnection(BaseIRCConnection):
-    connection_made_event = Event()
+    new_connection_event = Event()
 
     DEFAULT_SERVERNAME = 'server.shroudbnc.info'
     servername = DEFAULT_SERVERNAME
@@ -217,7 +219,7 @@ class IRCServerConnection(BaseIRCConnection):
                                 **{'prefix': IRCServerConnection.servername})
 
     def handle_connection_made(self):
-        if not IRCServerConnection.connection_made_event.invoke(self):
+        if not IRCServerConnection.new_connection_event.invoke(self):
             return
         
         BaseIRCConnection.handle_connection_made(self)
