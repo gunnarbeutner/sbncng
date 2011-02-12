@@ -28,6 +28,12 @@ class Proxy(object):
         self.client_connections.remove(clientobj)
     
     def client_registration_handler(self, event, clientobj):
+        if clientobj.hostmask.nick != self.irc_connection.hostmask.nick:
+            clientobj.send_message('NICK', self.irc_connection.hostmask.nick, prefix=clientobj.hostmask)
+            clientobj.hostmask.nick = self.irc_connection.hostmask.nick
+
+            self.irc_connection.send_message('NICK', clientobj.hostmask.nick)
+
         timer.Timer.create(0, self.client_post_registration_timer, clientobj)
 
         if self.irc_connection != None:
@@ -37,12 +43,6 @@ class Proxy(object):
         clientobj.command_received_event.add_handler(self.client_command_handler)
             
     def client_post_registration_timer(self, clientobj):
-        if clientobj.hostmask.nick != self.irc_connection.hostmask.nick:
-            clientobj.send_message('NICK', self.irc_connection.hostmask.nick, prefix=clientobj.hostmask)
-            clientobj.hostmask.nick = self.irc_connection.hostmask.nick
-
-            self.irc_connection.send_message('NICK', clientobj.hostmask.nick)
-        
         for channel in self.irc_connection.channels:
             clientobj.send_message('JOIN', channel, prefix=self.irc_connection.hostmask)
             clientobj.process_line('TOPIC %s' % (channel))
@@ -59,6 +59,14 @@ class Proxy(object):
     def irc_command_handler(self, evt, ircobj, command, prefix, params):
         if not ircobj.registered:
             return
-        
+                
         for clientobj in self.client_connections:
-            clientobj.send_message(command, prefix=prefix, *params)
+            if not clientobj.registered:
+                continue
+            
+            if str(prefix) == ircobj.servername:
+                mapped_prefix = clientobj.servername
+            else:
+                mapped_prefix = prefix
+
+            clientobj.send_message(command, prefix=mapped_prefix, *params)

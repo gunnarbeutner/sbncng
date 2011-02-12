@@ -117,7 +117,7 @@ class _BaseConnection(object):
         message = message + command
 
         if len(params) > 0:
-            if ' ' in params[-1] and params[-1][0] != ':':
+            if len(params[-1]) > 0:
                 params[-1] = ':' + params[-1]
 
             message = message + ' ' + string.join(params)
@@ -302,6 +302,8 @@ class ClientConnection(_BaseConnection):
             if not nick in ircobj.nicks:
                 nickobj = Nick(prefix)
                 ircobj.nicks[nick] = nickobj
+            else:
+                nickobj = ircobj.nicks[nick]
 
             if nick == ircobj.hostmask.nick:
                 channelobj = Channel(channel)
@@ -318,7 +320,7 @@ class ServerConnection(_BaseConnection):
 
     rpls = {
         'RPL_WELCOME': (1, 'Welcome to the Internet Relay Network %s'),
-        'RPL_ISUPPORT': (5, '%s :are supported by this server'),
+        'RPL_ISUPPORT': (5, 'are supported by this server'),
         'RPL_MOTDSTART': (375, '- %s Message of the day -'),
         'RPL_MOTD': (372, '- %s'),
         'RPL_ENDMOTD': (376, 'End of MOTD command'),
@@ -504,10 +506,10 @@ class ServerConnection(_BaseConnection):
                 if length > 300:
                     attribs = []
                     length = 0
-                    ircobj.send_reply('RPL_ISUPPORT', format_args=(' '.join(attribs)))
+                    ircobj.send_reply('RPL_ISUPPORT', *attribs)
 
             if length > 0:
-                ircobj.send_reply('RPL_ISUPPORT', format_args=(' '.join(attribs)))
+                ircobj.send_reply('RPL_ISUPPORT', *attribs)
 
             evt.stop_handlers()
 

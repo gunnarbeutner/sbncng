@@ -24,7 +24,7 @@ def parse_irc_message(line):
             
         first = False
 
-        if len(token) > 0 and token[0] == ':':
+        if not last and len(token) > 0 and token[0] == ':':
             token = token[1:]
             last = True
 
