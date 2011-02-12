@@ -19,6 +19,10 @@ class BaseIRCConnection(object):
     password = None
     hostname = None
     realname = None
+    servername = None
+    usermodes = ''
+    channels = {}
+    isupport = {}
         
     _registration_timeout = None
 
@@ -38,35 +42,48 @@ class BaseIRCConnection(object):
             raise ValueError('missing argument: addr')
         
         self.connection_closed_event = Event()
-        self.registration_successful_event = Event()
-        self.command_events = defaultdict(Event)
+        self.registration_event = Event()
         self.command_received_event = Event()
 
+        self.command_events = defaultdict(Event)
+
     def start(self):
-        return gevent.spawn(self.run)
+        return gevent.spawn(self._run)
     
-    def run(self):
+    def _run(self):
         if self.socket == None:
             self.socket = socket.create_connection(self.socket_addr)
         
         self.connection = self.socket.makefile()
 
-        self.handle_connection_made()
+        try:
+            self.handle_connection_made()
+    
+            while True:
+                try:
+                    line = self.connection.readline()
+    
+                    if not line:
+                        break
+    
+                    self.process_line(line)
+                except Exception, exc:
+                    if not self.handle_exception(exc):
+                        raise
+    
+            self.connection.close()
+        finally:    
+            self.connection_closed_event.invoke(self)
 
-        while True:
-            try:
-                line = self.connection.readline()
+    def close(self, message=None):
+        self.connection.flush()
+        self.socket.shutdown(socket.SHUT_RDWR)
+        self.socket.close()
 
-                if not line:
-                    break
-
-                self.process_line(line)
-            except RegistrationTimeoutError:
-                self.handle_registration_timeout()
-
-        self.connection.close()
-        
-        self.connection_closed_event.invoke(self)
+    def handle_exception(self, exc):
+        if isinstance(exc, RegistrationTimeoutError):
+            self.handle_registration_timeout()
+            return True
 
     def process_line(self, line):
         prefix, command, params = utils.parse_irc_message(line.rstrip('\r\n'))
@@ -78,14 +95,14 @@ class BaseIRCConnection(object):
         if not self.command_received_event.invoke(self, command=command, prefix=prefix, params=params):
             return
         
-        if command in self.command_events:
+        if command in self.command_events and self.command_events[command].handlers_count > 0:
             self.command_events[command].invoke(self, prefix=prefix, params=params)
         else:
             self.handle_unknown_command(prefix, command, params)
 
-    def get_hostmask(self):
-        # TODO: figure out what to do if we don't have all those vars yet
-        return utils.format_hostmask( (self.nickname, self.username, self.hostname) )
+    def send_line(self, line):
+        self.connection.write(line + '\n')
+        self.connection.flush()
 
     def send_message(self, command, *parameter_list, **prefix):
         params = list(parameter_list)
@@ -102,13 +119,15 @@ class BaseIRCConnection(object):
                 params[-1] = ':' + params[-1]
                 
             message = message + ' ' + string.join(params)
-                
-        self.connection.write(message + '\n')
-        self.connection.flush()
+             
+        self.send_line(message)   
+
+    def get_hostmask(self):
+        # TODO: figure out what to do if we don't have all those vars yet
+        return utils.format_hostmask( (self.nickname, self.username, self.hostname) )
 
     def handle_connection_made(self):
-        self._registration_timeout = gevent.Timeout(60, RegistrationTimeoutError)
-        self._registration_timeout.start()
+        self._registration_timeout = gevent.Timeout.start_new(60, RegistrationTimeoutError)
 
     def handle_unknown_command(self, command, prefix, params):
         pass
@@ -119,14 +138,10 @@ class BaseIRCConnection(object):
         self._registration_timeout.cancel()
         self._registration_timeout = None
         
-        self.registration_successful_event.invoke(self)
+        self.registration_event.invoke(self)
 
     def handle_registration_timeout(self):
         self.close('Registration timeout detected.')
-
-    def close(self, message=None):
-        self.socket.shutdown(socket.SHUT_RDWR)
-        self.socket.close()
         
     def add_command_handler(self, command, handler, priority=Event.NORMAL_PRIORITY):
         self.command_events[command].add_handler(handler, priority)
@@ -174,10 +189,12 @@ class IRCClientConnection(BaseIRCConnection):
         def register_handlers(ircobj):
             ircobj.add_command_handler('PING', IRCClientConnection.CommandHandlers.irc_PING, Event.LOW_PRIORITY)
             ircobj.add_command_handler('001', IRCClientConnection.CommandHandlers.irc_001, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('005', IRCClientConnection.CommandHandlers.irc_005, Event.LOW_PRIORITY)
             ircobj.add_command_handler('NICK', IRCClientConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
         
         register_handlers = staticmethod(register_handlers)
         
+        # PING :wineasy1.se.quakenet.org
         def irc_PING(event, ircobj, prefix, params):
             if len(params) < 1:
                 return
@@ -186,14 +203,41 @@ class IRCClientConnection(BaseIRCConnection):
             
         irc_PING = staticmethod(irc_PING)
     
+        # :wineasy1.se.quakenet.org 001 shroud_ :Welcome to the QuakeNet IRC Network, shroud_
         def irc_001(event, ircobj, prefix, params):
             ircobj.nickname = ircobj.attempted_nickname
             ircobj.attempted_nickname = None
+            
+            ircobj.servername = utils.format_hostmask(prefix)
     
             ircobj.register_user()
     
         irc_001 = staticmethod(irc_001)
     
+        # :wineasy1.se.quakenet.org 005 shroud_ WHOX WALLCHOPS WALLVOICES USERIP CPRIVMSG CNOTICE \
+        # SILENCE=15 MODES=6 MAXCHANNELS=20 MAXBANS=45 NICKLEN=15 :are supported by this server
+        def irc_005(event, ircobj, prefix, params):
+            if len(params) < 3:
+                return
+            
+            attribs = params[1:-1]
+            
+            for attrib in attribs:
+                tokens = attrib.split('=', 2)
+                key = tokens[0]
+                
+                if len(tokens) > 1:
+                    value = tokens[1]
+                else:
+                    value = ''
+                    
+                ircobj.isupport[key] = value
+                
+            print attribs
+    
+        irc_005 = staticmethod(irc_005)
+        
+        # :shroud_!~shroud@p579F98A1.dip.t-dialin.net NICK :shroud__
         def irc_NICK(event, ircobj, prefix, params):
             if len(params) < 1 or prefix == None:
                 return
@@ -211,6 +255,7 @@ class IRCServerConnection(BaseIRCConnection):
 
     rpls = {
         'RPL_WELCOME': (1, 'Welcome to the Internet Relay Network %s!%s@%s'),
+        'RPL_ISUPPORT': (5, '%s :are supported by this server'),
         'ERR_UNKNOWNCOMMAND': (421, 'Unknown command'),
         'ERR_NONICKNAMEGIVEN': (431, 'No nickname given'),
         'ERR_ERRONEUSNICKNAME': (432, 'Erroneous nickname'),
@@ -220,6 +265,13 @@ class IRCServerConnection(BaseIRCConnection):
 
     def __init__(self, **kwargs):
         BaseIRCConnection.__init__(self, **kwargs)
+
+        self.isupport = {
+            'CHANMODES': 'bIe,k,l',
+            'CHANTYPES': '#&+',
+            'PREFIX': '(ov)@+',
+            'NAMESX': ''
+        }
 
         self.hostname = self.socket_addr[0]
 
@@ -284,7 +336,7 @@ class IRCServerConnection(BaseIRCConnection):
             self.close('Authentication failed: Invalid user credentials.')
             return
         
-        if not self.registration_successful_event.invoke(self):
+        if not self.registration_event.invoke(self):
             return
 
         BaseIRCConnection.register_user(self)
@@ -292,6 +344,29 @@ class IRCServerConnection(BaseIRCConnection):
         self.password = None
         
         self.send_reply('RPL_WELCOME', format_args=(self.nickname, self.username, self.hostname))
+        
+        attribs = []
+        length = 0
+        
+        for key in self.isupport:
+            value = self.isupport[key]
+            
+            if len(value) > 0:
+                attrib = '%s=%s' % (key, value)
+            else:
+                attrib = key
+                
+            attribs.append(attrib)
+            length += len(attrib)
+            
+            if length > 300:
+                attribs = []
+                length = 0
+                self.send_reply('RPL_ISUPPORT', format_args=(' '.join(attribs)))
+                
+        if length > 0:
+            self.send_reply('RPL_ISUPPORT', format_args=(' '.join(attribs)))
+        
         # TODO: send motd/end of motd
 
     def authenticate_user(self):
@@ -325,7 +400,7 @@ class IRCServerConnection(BaseIRCConnection):
         
         irc_USER = staticmethod(irc_USER)
         
-        def irc_NICK(event, ircobj, source, params):
+        def irc_NICK(event, ircobj, prefix, params):
             if len(params) < 1:
                 ircobj.send_reply('ERR_NONICKNAMEGIVEN', 'NICK')
                 return

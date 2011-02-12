@@ -4,11 +4,11 @@ listener = irc.IRCServerListener( ('0.0.0.0', 9000) )
 task = listener.start()
 
 def new_conn_handler(event, ircobj):
-    ircobj.registration_successful_event.add_handler(registration_event)
+    ircobj.registration_event.add_handler(registration_event)
 
 def registration_event(event, ircobj):
     ircobj.send_message('JOIN', '#sbncng')
-    ircobj.command_events['PRIVMSG'].add_handler(privmsg_handler)
+    ircobj.add_command_handler('PRIVMSG', privmsg_handler)
 
 def privmsg_handler(event, ircobj, prefix, params):
     nick = prefix[0]
