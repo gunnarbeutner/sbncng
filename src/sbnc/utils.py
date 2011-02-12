@@ -17,7 +17,7 @@ def parse_irc_message(line):
     for token in tokens:
         if first and len(token) > 0 and token[0] == ':':
             token = token[1:]
-            prefix = parse_hostmask(token)
+            prefix = Hostmask(token)
             first = False
 
             continue
@@ -50,24 +50,43 @@ def parse_irc_message(line):
 
     return prefix, command, args
 
-_hostmask_regex = re.compile('^(.*)!(.*)@(.*)$')
+class Hostmask(object):
+    _hostmask_regex = re.compile('^(.*)!(.*)@(.*)$')
 
-def parse_hostmask(hostmask):
-    if isinstance(hostmask, tuple):
-        return hostmask
+    def __init__(self, mask=None):
+        if isinstance(mask, Hostmask):
+            self.nick = mask.nick
+            self.user = mask.user
+            self.host = mask.host
+            return
 
-    match = _hostmask_regex.match(hostmask)
-    
-    if not match:
-        return (hostmask, None, None)
-    
-    return (match.group(1), match.group(2), match.group(3))
+        if mask != None:
+            match = Hostmask._hostmask_regex.match(mask)
+        else:
+            match = False
+                    
+        if not match:
+            self.nick = mask
+            self.user = None
+            self.host = None
+        else:
+            self.nick = match.group(1)
+            self.user = match.group(2)
+            self.host = match.group(3)
 
-def format_hostmask(hostmask_tuple):
-    if isinstance(hostmask_tuple, str):
-        return hostmask_tuple
+    def __str__(self):
+        if self.user == None or self.host == None:
+            return self.nick
+        else:
+            return '%s!%s@%s' % (self.nick, self.user, self.host)
 
-    if hostmask_tuple[1] == None or hostmask_tuple[2] == None:
-        return hostmask_tuple[0]
-    else:
-        return '%s!%s@%s' % hostmask_tuple
+    def __eq__(self, other):
+        if other == None:
+            return False
+
+        return (self.nick == other.nick) and \
+               (self.user == other.user) and \
+               (self.host == other.host)
+               
+    def __ne__(self, other):
+        return not self.__eq__(other)

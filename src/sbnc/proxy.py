@@ -1,19 +1,16 @@
 from sbnc import irc, timer, event
 
 class Proxy(object):
-    irc_factory = irc.ConnectionFactory(irc.ClientConnection)
-    client_factory = irc.ConnectionFactory(irc.ServerConnection)
-
     def __init__(self):
         self.irc_factory = irc.ConnectionFactory(irc.ClientConnection)
         self.client_factory = irc.ConnectionFactory(irc.ServerConnection)
 
         self.client_factory.new_connection_event.add_handler(self.new_client_handler)
         
-        self.irc_connection = Proxy.irc_factory.create(addr=('irc.quakenet.org', 6667))
-        self.irc_connection.attempted_nickname = 'sbncng'
-        self.irc_connection.username = 'sbncng'
-        self.irc_connection.realname = 'sbncng client'
+        self.irc_connection = self.irc_factory.create(addr=('irc.quakenet.org', 6667))
+        self.irc_connection.reg_nickname = 'sbncng'
+        self.irc_connection.reg_username = 'sbncng'
+        self.irc_connection.reg_realname = 'sbncng client'
         
         self.irc_connection.command_received_event.add_handler(self.irc_command_handler)
         
@@ -26,32 +23,38 @@ class Proxy(object):
         
         clientobj.registration_event.add_handler(self.client_registration_handler)
         clientobj.connection_closed_event.add_handler(self.client_closed_handler)
-        
-        if irc != None:
-            clientobj.motd = self.irc_connection.motd
-            clientobj.isupport = self.irc_connection.isupport
-    
+            
     def client_closed_handler(self, evt, clientobj):
         self.client_connections.remove(clientobj)
     
     def client_registration_handler(self, event, clientobj):
-        if clientobj.nickname != self.irc_connection.nickname:
-            timer.Timer.create(0, self.client_post_registration_timer, clientobj)
-    
+        timer.Timer.create(0, self.client_post_registration_timer, clientobj)
+
+        if self.irc_connection != None:
+            clientobj.motd = self.irc_connection.motd
+            clientobj.isupport = self.irc_connection.isupport
+
         clientobj.command_received_event.add_handler(self.client_command_handler)
             
     def client_post_registration_timer(self, clientobj):
-        clientobj.send_message('NICK', self.irc_connection.nickname, prefix=clientobj.get_hostmask())
-        clientobj.nickname = self.irc_connection.nickname
+        if clientobj.hostmask.nick != self.irc_connection.hostmask.nick:
+            clientobj.send_message('NICK', self.irc_connection.hostmask.nick, prefix=clientobj.hostmask)
+            clientobj.hostmask.nick = self.irc_connection.hostmask.nick
+
+            self.irc_connection.send_message('NICK', clientobj.hostmask.nick)
+        
+        for channel in self.irc_connection.channels:
+            clientobj.send_message('JOIN', channel, prefix=self.irc_connection.hostmask)
+            clientobj.process_line('TOPIC %s' % (channel))
+            clientobj.process_line('NAMES %s' % (channel))
     
     def client_command_handler(self, evt, clientobj, command, prefix, params):
         if not clientobj.registered:
             return
         
-        if command != 'QUIT':
+        if not command in ['PASS', 'USER', 'QUIT']:
             self.irc_connection.send_message(command, prefix=prefix, *params)
-        
-        evt.stop_handlers(event.Event.LOW_PRIORITY)
+            evt.stop_handlers(event.Event.LOW_PRIORITY)
         
     def irc_command_handler(self, evt, ircobj, command, prefix, params):
         if not ircobj.registered:

@@ -13,7 +13,7 @@ task = listener.start()
 #    ircobj.add_command_handler('PRIVMSG', privmsg_handler)
 #
 #def privmsg_handler(event, ircobj, prefix, params):
-#    nick = prefix[0]
+#    nick = prefix.nick
 #    chan = params[0]
 #    msg = params[1]
 #    
