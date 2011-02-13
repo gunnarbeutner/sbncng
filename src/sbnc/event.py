@@ -3,9 +3,9 @@ from collections import defaultdict
 class Event(object):
     """Multicast delegate used to handle events."""
 
-    HIGH_PRIORITY = 1
+    LOW_PRIORITY = 1
     NORMAL_PRIORITY = 2
-    LOW_PRIORITY = 3
+    HIGH_PRIORITY = 3
     
     def __init__(self):
         self._handlers = defaultdict(set)
@@ -36,7 +36,7 @@ class Event(object):
         for k in sorted(self._handlers.keys()):
             for handler in self._handlers[k]:
                 if self._handlers_stopped and \
-                        (self._handlers_stopped_priority == None or k >= self._handlers_stopped_priority):
+                        (self._handlers_stopped_priority == None or k <= self._handlers_stopped_priority):
                     break
 
                 handler(self, source, *args)
@@ -44,10 +44,17 @@ class Event(object):
         return not self._handlers_stopped
     
     def get_handlers_count(self):
+        """Returns the number of handlers that are currently registered
+        for this event."""
+        
         return len(self._handlers)
     
     handlers_count = property(get_handlers_count)
     
     def stop_handlers(self, priority=None):
+        """Stops event handlers from being called for the current invocation. If
+        a priority is specified only those handlers with a priority equal to
+        or lower are stopped, otherwise all remaining handlers are skipped."""
+
         self._handlers_stopped_priority = priority
         self._handlers_stopped = True
