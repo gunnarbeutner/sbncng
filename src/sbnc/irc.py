@@ -38,10 +38,20 @@ class _BaseConnection(object):
         self.registered = False
         self.realname = None
         self.usermodes = ''
+
         self.nicks = WeakValueDictionary()
         self.channels = {}
-        self.isupport = {}
+
+        self.isupport = {
+            'CHANMODES': 'bIe,k,l',
+            'CHANTYPES': '#&+',
+            'PREFIX': '(ov)@+',
+            'NAMESX': ''
+        }
+
         self.motd = []
+
+        self.owner = None
 
         self._registration_timeout = None
 
@@ -90,37 +100,41 @@ class _BaseConnection(object):
         hostmask_dict = utils.parse_hostmask(hostmask)
         nick = hostmask_dict['nick']
     
-        if nick == self.server.nick:
-            return self.server
+        nickobj = None
     
-        if nick in self.nicks:
+        if nick == self.me.nick:
+            nickobj = self.me
+        elif nick == self.server.nick:
+            nickobj = self.server
+        elif nick in self.nicks:
             nickobj = self.nicks[nick]
-            nickobj.update_hostmask(hostmask_dict)
         else:
             nickobj = Nick(self, hostmask_dict)
             self.nicks[nick] = nickobj
             
+        nickobj.update_hostmask(hostmask_dict)
+
         return nickobj
 
     def process_line(self, line):
         prefix, command, params = utils.parse_irc_message(line.rstrip('\r\n'))
-        prefix = self.get_nick(prefix)
+        nickobj = self.get_nick(prefix)
 
-        print prefix, command, params
+        print nickobj, command, params
 
         command = command.upper()
 
         have_cmd_handler = command in self.command_events and self.command_events[command].handlers_count > 0
 
         if have_cmd_handler:
-            if not self.command_events[command].invoke(self, prefix, params):
+            if not self.command_events[command].invoke(self, nickobj, params):
                 return
 
-        if not self.command_received_event.invoke(self, command, prefix, params):
+        if not self.command_received_event.invoke(self, command, nickobj, params):
             return
 
         if not have_cmd_handler:
-            self.handle_unknown_command(prefix, command, params)
+            self.handle_unknown_command(nickobj, command, params)
 
     def send_line(self, line):
         self.connection.write(line + '\n')
@@ -147,7 +161,7 @@ class _BaseConnection(object):
     def handle_connection_made(self):
         self._registration_timeout = gevent.Timeout.start_new(60, RegistrationTimeoutError)
 
-    def handle_unknown_command(self, command, prefix, params):
+    def handle_unknown_command(self, command, nickobj, params):
         pass
 
     def register_user(self):
@@ -214,7 +228,7 @@ class ClientConnection(_BaseConnection):
         self.send_message('QUIT', message)
         _BaseConnection.close(self, message)
 
-    def handle_unknown_command(self, prefix, command, params):
+    def handle_unknown_command(self, nickobj, command, params):
         print "No idea how to handle this: command=", command, " - params=", params
 
     class CommandHandlers(object):
@@ -227,11 +241,14 @@ class ClientConnection(_BaseConnection):
             ircobj.add_command_handler('NICK', ClientConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
             ircobj.add_command_handler('JOIN', ClientConnection.CommandHandlers.irc_JOIN, Event.LOW_PRIORITY)
             ircobj.add_command_handler('PART', ClientConnection.CommandHandlers.irc_PART, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('KICK', ClientConnection.CommandHandlers.irc_KICK, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('QUIT', ClientConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('353', ClientConnection.CommandHandlers.irc_353, Event.LOW_PRIORITY)
 
         register_handlers = staticmethod(register_handlers)
 
         # PING :wineasy1.se.quakenet.org
-        def irc_PING(evt, ircobj, prefix, params):
+        def irc_PING(evt, ircobj, nickobj, params):
             if len(params) < 1:
                 return
 
@@ -242,10 +259,10 @@ class ClientConnection(_BaseConnection):
         irc_PING = staticmethod(irc_PING)
 
         # :wineasy1.se.quakenet.org 001 shroud_ :Welcome to the QuakeNet IRC Network, shroud_
-        def irc_001(evt, ircobj, prefix, params):
+        def irc_001(evt, ircobj, nickobj, params):
             ircobj.me.nick = ircobj.reg_nickname
 
-            ircobj.server.nick = str(prefix)
+            ircobj.server = nickobj
 
             ircobj.register_user()
 
@@ -253,7 +270,7 @@ class ClientConnection(_BaseConnection):
 
         # :wineasy1.se.quakenet.org 005 shroud_ WHOX WALLCHOPS WALLVOICES USERIP CPRIVMSG CNOTICE \
         # SILENCE=15 MODES=6 MAXCHANNELS=20 MAXBANS=45 NICKLEN=15 :are supported by this server
-        def irc_005(evt, ircobj, prefix, params):
+        def irc_005(evt, ircobj, nickobj, params):
             if len(params) < 3:
                 return
 
@@ -275,13 +292,13 @@ class ClientConnection(_BaseConnection):
         irc_005 = staticmethod(irc_005)
 
         # :wineasy1.se.quakenet.org 375 shroud_ :- wineasy1.se.quakenet.org Message of the Day - 
-        def irc_375(evt, ircobj, prefix, params):
+        def irc_375(evt, ircobj, nickobj, params):
             ircobj.motd = []
 
         irc_375 = staticmethod(irc_375)
 
         # :wineasy1.se.quakenet.org 372 shroud_ :- ** [ wineasy.se.quakenet.org ] **************************************** 
-        def irc_372(evt, ircobj, prefix, params):
+        def irc_372(evt, ircobj, nickobj, params):
             if len(params) < 2:
                 return
 
@@ -290,11 +307,11 @@ class ClientConnection(_BaseConnection):
         irc_372 = staticmethod(irc_372)
 
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net NICK :shroud__
-        def irc_NICK(evt, ircobj, prefix, params):
-            if len(params) < 1 or prefix == None:
+        def irc_NICK(evt, ircobj, nickobj, params):
+            if len(params) < 1 or nickobj == None:
                 return
 
-            oldnick = prefix.nick
+            oldnick = nickobj.nick
             newnick = params[0]
 
             if newnick == ircobj.me.nick:
@@ -310,29 +327,141 @@ class ClientConnection(_BaseConnection):
         irc_NICK = staticmethod(irc_NICK)
 
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net JOIN #sbncng
-        def irc_JOIN(evt, ircobj, prefix, params):
+        def irc_JOIN(evt, ircobj, nickobj, params):
             if len(params) < 1:
                 return
 
-            nick = prefix.nick
             channel = params[0]
 
-            if not nick in ircobj.nicks:
-                nickobj = Nick(prefix)
-                ircobj.nicks[nick] = nickobj
-            else:
-                nickobj = ircobj.nicks[nick]
-
-            if nick == ircobj.me.nick:
+            if nickobj == ircobj.me:
                 channelobj = Channel(ircobj, channel)
                 ircobj.channels[channel] = channelobj
             else:
+                if not channel in ircobj.channels:
+                    return
+                
                 channelobj = ircobj.channels[channel]
 
             channelobj.add_nick(nickobj)
 
         irc_JOIN = staticmethod(irc_JOIN)
 
+        # :shroud_!~shroud@p579F98A1.dip.t-dialin.net PART #sbncng
+        def irc_PART(evt, ircobj, nickobj, params):
+            if len(params) < 1:
+                return
+        
+            channel = params[0]
+            
+            if not channel in ircobj.channels:
+                return
+
+            if nickobj == ircobj.me:
+                del ircobj.channels[channel]
+            else:            
+                channelobj = ircobj.channels[channel]
+                
+                if not nickobj in channelobj.nicks:
+                    return
+                
+                channelobj.remove_nick(nickobj)
+
+        irc_PART = staticmethod(irc_PART)
+        
+        # :shroud_!~shroud@p579F98A1.dip.t-dialin.net KICK #sbncng sbncng :test
+        def irc_KICK(evt, ircobj, nickobj, params):
+            if len(params) < 2:
+                return
+            
+            channel = params[0]
+            victim = params[1]
+                        
+            if not channel in ircobj.channels:
+                return
+            
+            victimobj = ircobj.get_nick(victim)
+
+            if victimobj == ircobj.me:
+                del ircobj.channels[channel]
+            else:
+                channelobj = ircobj.channels[channel]
+                
+                if not nickobj in channelobj.nicks:
+                    return
+                
+                channelobj.remove_nick(nickobj)
+            
+        irc_KICK = staticmethod(irc_KICK)
+
+        # :shroud_!~shroud@p579F98A1.dip.t-dialin.net QUIT :test
+        def irc_QUIT(evt, ircobj, nickobj, params):
+            channels = list(nickobj.channels)
+            
+            for channel in channels:
+                channel.remove_nick(nickobj)
+            
+        irc_QUIT = staticmethod(irc_QUIT)
+        
+        # :server.shroudbnc.info 353 sbncng = #sbncng :sbncng @shroud
+        def irc_353(evt, ircobj, nickobj, params):
+            if len(params) < 4:
+                return
+            
+            channel = params[2]
+            
+            if not channel in ircobj.channels:
+                return
+            
+            channelobj = ircobj.channels[channel]
+            
+            tokens = params[3].split(' ')
+            
+            for token in tokens:
+                nick = token
+                modes = ''
+                
+                while len(nick) > 0:
+                    mode = utils.prefix_to_mode(ircobj.isupport['PREFIX'], nick[0])
+                    
+                    if mode == None:
+                        break
+                    
+                    nick = nick[1:]
+                    modes += mode
+                
+                nickobj = ircobj.get_nick(nick)
+                
+                if nickobj in channelobj.nicks:
+                    membership = channelobj.nicks[nickobj]
+                else:
+                    membership = channelobj.add_nick(nickobj)
+
+                membership.modes = modes
+                
+                print nick, modes
+        
+        irc_353 = staticmethod(irc_353)
+        
+        # :server.shroudbnc.info 366 sbncng #sbncng :End of /NAMES list.
+        def irc_366(evt, ircobj, nickobj, params):
+            if len(params) < 2:
+                return
+            
+            channel = params[1]
+            
+            if not channel in ircobj.channels:
+                return
+            
+            channelobj = ircobj.channels[channel]
+
+            channelobj.has_names = True
+            
+        irc_366 = staticmethod(irc_366)
+
+class IAuthenticationService(object):
+    def authenticate(self, username, password):
+        raise NotImplementedError()
+    
 class ServerConnection(_BaseConnection):
     DEFAULT_SERVERNAME = 'server.shroudbnc.info'
 
@@ -353,15 +482,10 @@ class ServerConnection(_BaseConnection):
     def __init__(self, **kwargs):
         _BaseConnection.__init__(self, **kwargs)
 
-        self.isupport = {
-            'CHANMODES': 'bIe,k,l',
-            'CHANTYPES': '#&+',
-            'PREFIX': '(ov)@+',
-            'NAMESX': ''
-        }
-
         self.me.host = self.socket_address[0]
-        self.servername = ServerConnection.DEFAULT_SERVERNAME
+        self.server.nick = ServerConnection.DEFAULT_SERVERNAME
+        
+        self.authentication_services = []
         
         self._password = None
 
@@ -384,7 +508,7 @@ class ServerConnection(_BaseConnection):
             text = ServerConnection.rpls[rpl][1]
 
         return self.send_message(command, *[nick] + list(params) + [text], \
-                                **{'prefix': self.servername})
+                                **{'prefix': self.server})
 
     def handle_connection_made(self):
         ServerConnection.CommandHandlers.register_handlers(self)
@@ -419,23 +543,29 @@ class ServerConnection(_BaseConnection):
                              'use /QUOTE PASS <password> to send one now.')
             return
 
-        if not self.authenticate_user():
-            self.close('Authentication failed: Invalid user credentials.')
-            return
+        if len(self.authentication_services) > 0:
+            for authentication_service in self.authentication_services:
+                self.owner = authentication_service.authenticate(self.me.user, self._password)
+                
+                if self.owner != None:
+                    break
+    
+            if not self.owner:
+                self.close('Authentication failed: Invalid user credentials.')
+                return
 
         _BaseConnection.register_user(self)
 
         self._password = None
 
         self.send_reply('RPL_WELCOME', format_args=(str(self.me)))
+        
+        # TODO: missing support for RPL_YOURHOST, RPL_CREATED and RPL_MYINFO
 
         self.process_line('VERSION')
         self.process_line('MOTD')
 
-    def authenticate_user(self):
-        return True
-
-    def handle_unknown_command(self, prefix, command, params):
+    def handle_unknown_command(self, nickobj, command, params):
         self.send_reply('ERR_UNKNOWNCOMMAND', command)
 
     class CommandHandlers(object):
@@ -449,7 +579,7 @@ class ServerConnection(_BaseConnection):
 
         register_handlers = staticmethod(register_handlers)
 
-        def irc_USER(evt, ircobj, prefix, params):
+        def irc_USER(evt, ircobj, nickobj, params):
             if len(params) < 4:
                 ircobj.send_reply('ERR_NEEDMOREPARAMS', 'USER')
                 return
@@ -465,7 +595,7 @@ class ServerConnection(_BaseConnection):
 
         irc_USER = staticmethod(irc_USER)
 
-        def irc_NICK(evt, ircobj, prefix, params):
+        def irc_NICK(evt, ircobj, nickobj, params):
             if len(params) < 1:
                 ircobj.send_reply('ERR_NONICKNAMEGIVEN', 'NICK')
                 return
@@ -488,7 +618,7 @@ class ServerConnection(_BaseConnection):
 
         irc_NICK = staticmethod(irc_NICK)
 
-        def irc_PASS(evt, ircobj, prefix, params):
+        def irc_PASS(evt, ircobj, nickobj, params):
             if len(params) < 1:
                 ircobj.send_reply('ERR_NEEDMOREPARAMS', 'PASS')
                 return
@@ -503,12 +633,17 @@ class ServerConnection(_BaseConnection):
 
         irc_PASS = staticmethod(irc_PASS)
 
-        def irc_QUIT(evt, ircobj, prefix, params):
+        def irc_QUIT(evt, ircobj, nickobj, params):
             ircobj.close('Goodbye.')
 
         irc_QUIT = staticmethod(irc_QUIT)
 
-        def irc_VERSION(evt, ircobj, prefix, params):
+        def irc_VERSION(evt, ircobj, nickobj, params):
+            if len(params) > 0:
+                return
+            
+            # TODO: missing support for RPL_VERSION
+            
             attribs = []
             length = 0
 
@@ -535,9 +670,9 @@ class ServerConnection(_BaseConnection):
 
         irc_VERSION = staticmethod(irc_VERSION)
 
-        def irc_MOTD(evt, ircobj, prefix, params):
+        def irc_MOTD(evt, ircobj, nickobj, params):
             if len(ircobj.motd) > 0:
-                ircobj.send_reply('RPL_MOTDSTART', format_args=(ircobj.servername))
+                ircobj.send_reply('RPL_MOTDSTART', format_args=(ircobj.server))
 
                 for line in ircobj.motd:
                     ircobj.send_reply('RPL_MOTD', format_args=(line))
@@ -581,6 +716,10 @@ class Channel(object):
         self.topic_text = None
         self.topic_time = None
         self.topic_hostmask = None
+        
+        self.has_names = False
+        self.has_topic = False
+        self.has_bans = False
 
     def add_nick(self, nickobj):
         membership = ChannelMembership(nickobj, self)
@@ -648,7 +787,7 @@ class Nick(object):
 
     def update_hostmask(self, hostmask_dict):
         if hostmask_dict['user'] != None and self.user != hostmask_dict['user']:
-            self.user = hostmask_dict[1]
+            self.user = hostmask_dict['user']
             
         if hostmask_dict['host'] != None and self.host != hostmask_dict['host']:
             self.host = hostmask_dict['host']

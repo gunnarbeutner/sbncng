@@ -74,3 +74,21 @@ def parse_hostmask(hostmask):
         'user': user,
         'host': host
     }
+
+_nickmodes_regex = re.compile('^\((.*?)\)(.*?)$')
+
+def prefix_to_mode(prefixes, prefix):
+    match = _nickmodes_regex.match(prefixes)
+    
+    if not match:
+        return None
+    
+    index = match.group(2).find(prefix)
+    
+    if index == -1:
+        return None
+    
+    return match.group(1)[index]
+
+def mode_to_prefix(prefixes, mode):
+    pass
