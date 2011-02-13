@@ -18,3 +18,4 @@ Connection queueing
 comments
 MODE rpl parsing
 TOPIC rpl parsing
+reconnect queue

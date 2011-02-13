@@ -43,16 +43,27 @@ class ProxyUser(object):
         self.name = name
         self.password = None
         
+        self.irc_connection = None
+        self.client_connections = []
+        
+        self.reconnect_to_irc()
+
+    def reconnect_to_irc(self):
+        if self.irc_connection != None:
+            self.irc_connection.close('Reconnecting.')
+
         self.irc_connection = self.proxy.irc_factory.create(address=('irc.quakenet.org', 6667))
         self.irc_connection.reg_nickname = name
         self.irc_connection.reg_username = 'sbncng'
         self.irc_connection.reg_realname = 'sbncng client'
         
         self.irc_connection.command_received_event.add_handler(self._irc_command_handler)
+        self.irc_connection.connection_closed_event.add_handler(self._irc_closed_handler)
         
         self.irc_connection.start()
-        
-        self.client_connections = []
+
+    def _irc_closed_handler(self, evt, ircobj):
+        self.reconnect_to_irc()
 
     def _client_closed_handler(self, evt, clientobj):
         self.client_connections.remove(clientobj)
@@ -82,18 +93,19 @@ class ProxyUser(object):
             clientobj.process_line('NAMES %s' % (channel))
 
     def _client_command_handler(self, evt, clientobj, command, prefix, params):
-        if not command in ['PASS', 'USER', 'QUIT']:
-            self.irc_connection.send_message(command, prefix=prefix, *params)
-            evt.stop_handlers(event.Event.LOW_PRIORITY)
+        if command in ['PASS', 'USER', 'QUIT']:
+            return
+    
+        self.irc_connection.send_message(command, prefix=prefix, *params)
+        evt.stop_handlers(event.Event.LOW_PRIORITY)
 
     def _irc_command_handler(self, evt, ircobj, command, prefix, params):
         if not ircobj.registered:
             return
         
-        chans = prefix.channels
-        
-        print list(chans)
-        
+        if command in ['ERROR']:
+            return
+    
         for clientobj in self.client_connections:
             if not clientobj.registered:
                 continue
