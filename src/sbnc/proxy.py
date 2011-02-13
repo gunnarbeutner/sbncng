@@ -1,4 +1,5 @@
 from sbnc import irc, timer, event
+from sbnc.event import Event
 
 class Proxy():
     def __init__(self):
@@ -6,35 +7,35 @@ class Proxy():
 
         self.client_factory = irc.ConnectionFactory(irc.ServerConnection)
         self.client_factory.new_connection_event.add_handler(self._new_client_handler)
-        self.authentication_service = ProxyAuthenticationService(self)
 
         self.users = {}
 
         self.users['shroud'] = ProxyUser(self, 'shroud')
         self.users['shroud'].password = 'keks'
 
-    def _new_client_handler(self, event, factory, clientobj):
-        clientobj.registration_event.add_handler(self._client_registration_handler)
-        
-        clientobj.authentication_services.append(self.authentication_service)
-            
-    def _client_registration_handler(self, event, clientobj):
-        clientobj.owner._client_registration_handler(event, clientobj)
+        self.users['thommey'] = ProxyUser(self, 'thommey')
+        self.users['thommey'].password = 'keks'
 
-class ProxyAuthenticationService(irc.IAuthenticationService):
-    def __init__(self, proxy):
-        self.proxy = proxy
-    
-    def authenticate(self, username, password):
-        if not username in self.proxy.users:
+    def _new_client_handler(self, evt, factory, clientobj):
+        clientobj.authentication_event.add_handler(self._client_authentication_handler, Event.LOW_PRIORITY)
+        clientobj.registration_event.add_handler(self._client_registration_handler, Event.LOW_PRIORITY)
+        
+        clientobj.authentication_service = self
+            
+    def _client_authentication_handler(self, evt, clientobj, username, password):
+        if not username in self.users:
             return None
         
-        userobj = self.proxy.users[username]
+        userobj = self.users[clientobj.me.user]
         
         if userobj.password != password:
             return None
         
-        return userobj
+        clientobj.owner = userobj
+        evt.stop_handlers()
+
+    def _client_registration_handler(self, event, clientobj):
+        clientobj.owner._client_registration_handler(event, clientobj)    
 
 class ProxyUser(object):
     def __init__(self, proxy, name):
@@ -43,7 +44,7 @@ class ProxyUser(object):
         self.password = None
         
         self.irc_connection = self.proxy.irc_factory.create(address=('irc.quakenet.org', 6667))
-        self.irc_connection.reg_nickname = 'sbncng'
+        self.irc_connection.reg_nickname = name
         self.irc_connection.reg_username = 'sbncng'
         self.irc_connection.reg_realname = 'sbncng client'
         
@@ -56,7 +57,7 @@ class ProxyUser(object):
     def _client_closed_handler(self, evt, clientobj):
         self.client_connections.remove(clientobj)
 
-    def _client_registration_handler(self, event, clientobj):
+    def _client_registration_handler(self, evt, clientobj):
         clientobj.connection_closed_event.add_handler(self._client_closed_handler)
         self.client_connections.append(clientobj)
 
@@ -103,3 +104,6 @@ class ProxyUser(object):
                 mapped_prefix = prefix
 
             clientobj.send_message(command, prefix=mapped_prefix, *params)
+
+    # TODO: irc_registration event, needs to force-change client's nick if different
+    # from the irc connection

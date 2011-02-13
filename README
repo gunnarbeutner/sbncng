@@ -3,3 +3,18 @@
 -Async DNS: gevent
 -SSL: pkg gevent.ssl
 -xml-rpc: pkg xmlrpc
+-timers: gevent.Timeout(?)
+
+Planned Features:
+cmd->rpl tracking
+
+Later:
+IPv6
+SSL
+
+TODO:
+flood protection
+Connection queueing
+comments
+MODE rpl parsing
+TOPIC rpl parsing

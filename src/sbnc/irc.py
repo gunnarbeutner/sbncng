@@ -244,6 +244,7 @@ class ClientConnection(_BaseConnection):
             ircobj.add_command_handler('KICK', ClientConnection.CommandHandlers.irc_KICK, Event.LOW_PRIORITY)
             ircobj.add_command_handler('QUIT', ClientConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
             ircobj.add_command_handler('353', ClientConnection.CommandHandlers.irc_353, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('433', ClientConnection.CommandHandlers.irc_433, Event.LOW_PRIORITY)
 
         register_handlers = staticmethod(register_handlers)
 
@@ -458,10 +459,19 @@ class ClientConnection(_BaseConnection):
             
         irc_366 = staticmethod(irc_366)
 
-class IAuthenticationService(object):
-    def authenticate(self, username, password):
-        raise NotImplementedError()
-    
+        # :underworld2.no.quakenet.org 433 * shroud :Nickname is already in use.
+        def irc_433(evt, ircobj, nickobj, params):
+            if len(params) < 2 or ircobj.registered:
+                return
+            
+            newnick = params[1] + '_'
+            
+            ircobj.reg_nickname = newnick
+                
+            ircobj.send_message('NICK', newnick)
+
+        irc_433 = staticmethod(irc_433)
+
 class ServerConnection(_BaseConnection):
     DEFAULT_SERVERNAME = 'server.shroudbnc.info'
 
@@ -485,7 +495,7 @@ class ServerConnection(_BaseConnection):
         self.me.host = self.socket_address[0]
         self.server.nick = ServerConnection.DEFAULT_SERVERNAME
         
-        self.authentication_services = []
+        self.authentication_event = Event()
         
         self._password = None
 
@@ -543,13 +553,9 @@ class ServerConnection(_BaseConnection):
                              'use /QUOTE PASS <password> to send one now.')
             return
 
-        if len(self.authentication_services) > 0:
-            for authentication_service in self.authentication_services:
-                self.owner = authentication_service.authenticate(self.me.user, self._password)
-                
-                if self.owner != None:
-                    break
-    
+        if self.authentication_event.handlers_count > 0:
+            self.authentication_event.invoke(self, self.me.user, self._password)
+            
             if not self.owner:
                 self.close('Authentication failed: Invalid user credentials.')
                 return
