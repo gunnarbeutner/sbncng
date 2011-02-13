@@ -7,7 +7,7 @@ class Proxy(object):
 
         self.client_factory.new_connection_event.add_handler(self.new_client_handler)
         
-        self.irc_connection = self.irc_factory.create(addr=('irc.quakenet.org', 6667))
+        self.irc_connection = self.irc_factory.create(address=('irc.quakenet.org', 6667))
         self.irc_connection.reg_nickname = 'sbncng'
         self.irc_connection.reg_username = 'sbncng'
         self.irc_connection.reg_realname = 'sbncng client'
@@ -28,11 +28,11 @@ class Proxy(object):
         self.client_connections.remove(clientobj)
     
     def client_registration_handler(self, event, clientobj):
-        if clientobj.hostmask.nick != self.irc_connection.hostmask.nick:
-            clientobj.send_message('NICK', self.irc_connection.hostmask.nick, prefix=clientobj.hostmask)
-            clientobj.hostmask.nick = self.irc_connection.hostmask.nick
+        if clientobj.me.nick != self.irc_connection.me.nick:
+            clientobj.send_message('NICK', self.irc_connection.me.nick, prefix=clientobj.me)
+            clientobj.me.nick = self.irc_connection.me.nick
 
-            self.irc_connection.send_message('NICK', clientobj.hostmask.nick)
+            self.irc_connection.send_message('NICK', clientobj.me.nick)
 
         timer.Timer.create(0, self.client_post_registration_timer, clientobj)
 
@@ -44,7 +44,7 @@ class Proxy(object):
             
     def client_post_registration_timer(self, clientobj):
         for channel in self.irc_connection.channels:
-            clientobj.send_message('JOIN', channel, prefix=self.irc_connection.hostmask)
+            clientobj.send_message('JOIN', channel, prefix=self.irc_connection.me)
             clientobj.process_line('TOPIC %s' % (channel))
             clientobj.process_line('NAMES %s' % (channel))
     
@@ -59,12 +59,16 @@ class Proxy(object):
     def irc_command_handler(self, evt, ircobj, command, prefix, params):
         if not ircobj.registered:
             return
-                
+        
+        chans = prefix.channels
+        
+        print list(chans)
+        
         for clientobj in self.client_connections:
             if not clientobj.registered:
                 continue
             
-            if str(prefix) == ircobj.servername:
+            if prefix == ircobj.server:
                 mapped_prefix = clientobj.servername
             else:
                 mapped_prefix = prefix

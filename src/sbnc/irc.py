@@ -12,19 +12,19 @@ class RegistrationTimeoutError(Exception):
 
 class _BaseConnection(object):
     def __init__(self, **kwargs):
-        """Named parameters can either be 'sock' (a socket) and 'addr' (a tuple
-        containing the remote IP address and port) or just 'addr' when you want
+        """Named parameters can either be 'socket' (a socket) and 'address' (a tuple
+        containing the remote IP address and port) or just 'address' when you want
         a new connection."""
 
-        if 'sock' in kwargs:
-            self.socket = kwargs['sock']
+        if 'socket' in kwargs:
+            self.socket = kwargs['socket']
         else:
             self.socket = None
 
-        if 'addr' in kwargs:
-            self.socket_addr = kwargs['addr']
+        if 'address' in kwargs:
+            self.socket_address = kwargs['address']
         else:
-            raise ValueError('missing argument: addr')
+            raise ValueError('missing argument: address')
 
         self.connection_closed_event = Event()
         self.registration_event = Event()
@@ -32,11 +32,11 @@ class _BaseConnection(object):
 
         self.command_events = defaultdict(Event)
 
+        self.me = Nick(self)
+        self.server = Nick(self)
+
         self.registered = False
-        self.attempted_nickname = None
-        self.hostmask = utils.Hostmask()
         self.realname = None
-        self.servername = None
         self.usermodes = ''
         self.nicks = WeakValueDictionary()
         self.channels = {}
@@ -50,7 +50,7 @@ class _BaseConnection(object):
 
     def _run(self):
         if self.socket == None:
-            self.socket = socket.create_connection(self.socket_addr)
+            self.socket = socket.create_connection(self.socket_address)
 
         self.connection = self.socket.makefile()
 
@@ -83,8 +83,28 @@ class _BaseConnection(object):
             self.handle_registration_timeout()
             return True
 
+    def get_nick(self, hostmask):
+        if hostmask == None:
+            return None
+
+        hostmask_dict = utils.parse_hostmask(hostmask)
+        nick = hostmask_dict['nick']
+    
+        if nick == self.server.nick:
+            return self.server
+    
+        if nick in self.nicks:
+            nickobj = self.nicks[nick]
+            nickobj.update_hostmask(hostmask_dict)
+        else:
+            nickobj = Nick(self, hostmask_dict)
+            self.nicks[nick] = nickobj
+            
+        return nickobj
+
     def process_line(self, line):
         prefix, command, params = utils.parse_irc_message(line.rstrip('\r\n'))
+        prefix = self.get_nick(prefix)
 
         print prefix, command, params
 
@@ -112,7 +132,7 @@ class _BaseConnection(object):
         message = ''
 
         if 'prefix' in prefix and prefix['prefix'] != None:
-            message = ':' + str(utils.Hostmask(prefix['prefix'])) + ' '
+            message = ':' + str(prefix['prefix']) + ' '
 
         message = message + command
 
@@ -146,7 +166,7 @@ class _BaseConnection(object):
 
     def remove_command_handler(self, command, handler):
         self.command_events[command].remove_handler(handler)
-
+    
 class ConnectionFactory(object):
     def __init__(self, cls):
         self.new_connection_event = Event()
@@ -199,8 +219,6 @@ class ClientConnection(_BaseConnection):
 
     class CommandHandlers(object):
         def register_handlers(ircobj):
-            ircobj.command_received_event.add_handler(ClientConnection.CommandHandlers.command_received_handler)
-
             ircobj.add_command_handler('PING', ClientConnection.CommandHandlers.irc_PING, Event.LOW_PRIORITY)
             ircobj.add_command_handler('001', ClientConnection.CommandHandlers.irc_001, Event.LOW_PRIORITY)
             ircobj.add_command_handler('005', ClientConnection.CommandHandlers.irc_005, Event.LOW_PRIORITY)
@@ -208,17 +226,9 @@ class ClientConnection(_BaseConnection):
             ircobj.add_command_handler('372', ClientConnection.CommandHandlers.irc_372, Event.LOW_PRIORITY)
             ircobj.add_command_handler('NICK', ClientConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
             ircobj.add_command_handler('JOIN', ClientConnection.CommandHandlers.irc_JOIN, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('PART', ClientConnection.CommandHandlers.irc_PART, Event.LOW_PRIORITY)
 
         register_handlers = staticmethod(register_handlers)
-
-        def command_received_handler(evt, ircobj, command, prefix, params):
-            if ircobj.hostmask == None or prefix == None or prefix.nick != ircobj.hostmask.nick:
-                return
-
-            if ircobj.hostmask != prefix:
-                ircobj.hostmask = prefix
-
-        command_received_handler = staticmethod(command_received_handler)
 
         # PING :wineasy1.se.quakenet.org
         def irc_PING(evt, ircobj, prefix, params):
@@ -233,9 +243,9 @@ class ClientConnection(_BaseConnection):
 
         # :wineasy1.se.quakenet.org 001 shroud_ :Welcome to the QuakeNet IRC Network, shroud_
         def irc_001(evt, ircobj, prefix, params):
-            ircobj.hostmask.nick = ircobj.reg_nickname
+            ircobj.me.nick = ircobj.reg_nickname
 
-            ircobj.servername = str(prefix)
+            ircobj.server.nick = str(prefix)
 
             ircobj.register_user()
 
@@ -284,11 +294,19 @@ class ClientConnection(_BaseConnection):
             if len(params) < 1 or prefix == None:
                 return
 
-            if prefix[0] == ircobj.hostmask.nick:
-                ircobj.hostmask.nick = prefix[0]
+            oldnick = prefix.nick
+            newnick = params[0]
 
-            # TODO: check channels/nicks list
+            if newnick == ircobj.me.nick:
+                ircobj.me.nick = newnick
 
+            if oldnick in ircobj.nicks:
+                nickobj = ircobj.nicks[oldnick]
+                nickobj.me.nick = newnick
+                
+                del ircobj.nicks[oldnick]
+                ircobj.nicks[newnick] = nickobj
+                
         irc_NICK = staticmethod(irc_NICK)
 
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net JOIN #sbncng
@@ -305,8 +323,8 @@ class ClientConnection(_BaseConnection):
             else:
                 nickobj = ircobj.nicks[nick]
 
-            if nick == ircobj.hostmask.nick:
-                channelobj = Channel(channel)
+            if nick == ircobj.me.nick:
+                channelobj = Channel(ircobj, channel)
                 ircobj.channels[channel] = channelobj
             else:
                 channelobj = ircobj.channels[channel]
@@ -342,13 +360,13 @@ class ServerConnection(_BaseConnection):
             'NAMESX': ''
         }
 
-        self.hostmask.host = self.socket_addr[0]
+        self.me.host = self.socket_address[0]
         self.servername = ServerConnection.DEFAULT_SERVERNAME
         
         self._password = None
 
     def send_reply(self, rpl, *params, **format_args):
-        nick = self.hostmask.nick
+        nick = self.me.nick
 
         if nick == None:
             nick = '*'
@@ -379,12 +397,12 @@ class ServerConnection(_BaseConnection):
         try:
             self.send_message('NOTICE', 'AUTH', '*** Looking up your hostname')
             # TODO: need to figure out how to do IPv6 reverse lookups
-            result = dns.resolve_reverse(socket.inet_aton(self.hostmask.host))
-            self.hostmask.host = result[1]
-            self.send_message('NOTICE', 'AUTH', '*** Found your hostname')
+            result = dns.resolve_reverse(socket.inet_aton(self.me.host))
+            self.me.host = result[1]
+            self.send_message('NOTICE', 'AUTH', '*** Found your hostname (%s)' % (self.me.host))
         except dns.DNSError:
             self.send_message('NOTICE', 'AUTH', '*** Couldn\'t look up your hostname, using ' + \
-                             'your IP address instead (%s)' % (self.hostmask.host))
+                             'your IP address instead (%s)' % (self.me.host))
 
     def close(self, message=None):
         self.send_message('ERROR', message)
@@ -393,7 +411,7 @@ class ServerConnection(_BaseConnection):
     def register_user(self):
         assert not self.registered
 
-        if self.hostmask.nick == None or self.hostmask.user == None:
+        if self.me.nick == None or self.me.user == None:
             return
 
         if self._password == None:
@@ -409,7 +427,7 @@ class ServerConnection(_BaseConnection):
 
         self._password = None
 
-        self.send_reply('RPL_WELCOME', format_args=(str(self.hostmask)))
+        self.send_reply('RPL_WELCOME', format_args=(str(self.me)))
 
         self.process_line('VERSION')
         self.process_line('MOTD')
@@ -440,7 +458,7 @@ class ServerConnection(_BaseConnection):
                 ircobj.send_reply('ERR_ALREADYREGISTRED')
                 return
 
-            ircobj.hostmask.user = params[0]
+            ircobj.me.user = params[0]
             ircobj.realname = params[3]
 
             ircobj.register_user()
@@ -452,19 +470,21 @@ class ServerConnection(_BaseConnection):
                 ircobj.send_reply('ERR_NONICKNAMEGIVEN', 'NICK')
                 return
 
-            if params[0] == ircobj.hostmask.nick:
+            nick = params[0]
+
+            if nick == ircobj.me.nick:
                 return
 
-            if ' ' in params[0]:
-                ircobj.send_reply('ERR_ERRONEUSNICKNAME', params[0])
+            if ' ' in nick:
+                ircobj.send_reply('ERR_ERRONEUSNICKNAME', nick)
                 return
 
             if not ircobj.registered:
-                ircobj.hostmask.nick = params[0]
+                ircobj.me.nick = nick
                 ircobj.register_user()
             else:
-                ircobj.send_message('NICK', params[0], prefix=ircobj.hostmask)
-                ircobj.hostmask.nick = params[0]
+                ircobj.send_message('NICK', nick, prefix=ircobj.me)
+                ircobj.me.nick = nick
 
         irc_NICK = staticmethod(irc_NICK)
 
@@ -546,10 +566,12 @@ class ServerListener(object):
             sock, addr = self.socket.accept()
             print("Accepted connection from", addr)
 
-            self._factory.create(sock=sock, addr=addr).start()
+            self._factory.create(socket=sock, address=addr).start()
 
 class Channel(object):
-    def __init__(self, name):
+    def __init__(self, ircobj, name):
+        self._ircobj = ircobj
+        
         self.name = name
         self.tags = {}
         self.nicks = {}
@@ -560,14 +582,14 @@ class Channel(object):
         self.topic_time = None
         self.topic_hostmask = None
 
-    def add_nick(self, nick):
-        membership = ChannelMembership(nick, self)
-        self.nicks[nick] = membership
+    def add_nick(self, nickobj):
+        membership = ChannelMembership(nickobj, self)
+        self.nicks[nickobj] = membership
 
         return membership
 
-    def remove_nick(self, nick):
-        del self.nicks[nick]
+    def remove_nick(self, nickobj):
+        del self.nicks[nickobj]
 
 class ChannelMembership(object):
     def __init__(self, nick, channel):
@@ -592,10 +614,52 @@ class ChannelMembership(object):
     voiced = property(_is_voiced)
 
 class Nick(object):
-    def __init__(self, hostmask):
-        self.hostmask = hostmask
+    def __init__(self, ircobj, hostmask=None):
+        self._ircobj = ircobj
+    
         self.tags = {}
         self.realname = None
         self.away = False
         self.opered = False
         self.creation = datetime.now()
+        
+        hostmask_dict = utils.parse_hostmask(hostmask)
+        
+        self.nick = hostmask_dict['nick']
+        self.user = hostmask_dict['user']
+        self.host = hostmask_dict['host']
+
+    def __str__(self):
+        if self.user == None or self.host == None:
+            return str(self.nick)
+        else:
+            return '%s!%s@%s' % (self.nick, self.user, self.host)
+
+    def __eq__(self, other):
+        if other == None:
+            return False
+
+        return (self.nick == other.nick) and \
+               (self.user == other.user) and \
+               (self.host == other.host)
+               
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def update_hostmask(self, hostmask_dict):
+        if hostmask_dict['user'] != None and self.user != hostmask_dict['user']:
+            self.user = hostmask_dict[1]
+            
+        if hostmask_dict['host'] != None and self.host != hostmask_dict['host']:
+            self.host = hostmask_dict['host']
+
+    def get_channels(self):
+        for channel in self._ircobj.channels:
+            channelobj = self._ircobj.channels[channel]
+            
+            if self in channelobj.nicks:
+                yield channelobj
+
+        raise StopIteration
+    
+    channels = property(get_channels)

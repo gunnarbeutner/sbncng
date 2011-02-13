@@ -1,10 +1,9 @@
 import re
 
-'''
-Parses an IRC message, returns a tuple containing
-the prefix (if any, None otherwise), the command and a list containing the arguments
-'''
 def parse_irc_message(line):
+    """Parses an IRC message, returns a tuple containing the prefix (if
+    any, None otherwise), the command and a list containing the arguments"""
+
     tokens = line.split(' ')
 
     prefix = None
@@ -17,7 +16,7 @@ def parse_irc_message(line):
     for token in tokens:
         if first and len(token) > 0 and token[0] == ':':
             token = token[1:]
-            prefix = Hostmask(token)
+            prefix = token
             first = False
 
             continue
@@ -50,43 +49,28 @@ def parse_irc_message(line):
 
     return prefix, command, args
 
-class Hostmask(object):
-    _hostmask_regex = re.compile('^(.*)!(.*)@(.*)$')
+_hostmask_regex = re.compile('^(.*)!(.*)@(.*)$')
 
-    def __init__(self, mask=None):
-        if isinstance(mask, Hostmask):
-            self.nick = mask.nick
-            self.user = mask.user
-            self.host = mask.host
-            return
+def parse_hostmask(hostmask):
+    if isinstance(hostmask, dict):
+        return hostmask
 
-        if mask != None:
-            match = Hostmask._hostmask_regex.match(mask)
-        else:
-            match = False
-                    
+    nick = None
+    user = None
+    host = None
+    
+    if hostmask != None:
+        match = _hostmask_regex.match(hostmask)
+        
         if not match:
-            self.nick = mask
-            self.user = None
-            self.host = None
+            nick = hostmask
         else:
-            self.nick = match.group(1)
-            self.user = match.group(2)
-            self.host = match.group(3)
+            nick = match.group(1)
+            user = match.group(2)
+            host = match.group(3)
 
-    def __str__(self):
-        if self.user == None or self.host == None:
-            return self.nick
-        else:
-            return '%s!%s@%s' % (self.nick, self.user, self.host)
-
-    def __eq__(self, other):
-        if other == None:
-            return False
-
-        return (self.nick == other.nick) and \
-               (self.user == other.user) and \
-               (self.host == other.host)
-               
-    def __ne__(self, other):
-        return not self.__eq__(other)
+    return {
+        'nick': nick,
+        'user': user,
+        'host': host
+    }
