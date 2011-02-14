@@ -79,10 +79,12 @@ class _BaseConnection(object):
                 except Exception, exc:
                     if not self.handle_exception(exc):
                         raise
-
-            self.connection.close()
         finally:
-            self.connection_closed_event.invoke(self)
+            try:
+                self.connection.close()
+                self.connection_closed_event.invoke(self)
+            except:
+                pass
 
     def close(self, message=None):
         self.connection.flush()
@@ -291,7 +293,11 @@ class ClientConnection(_BaseConnection):
             if len(params) < 2:
                 return
 
-            # TODO: strip the leading '- ' as that's not actually part of the MOTD text
+            motdline = params[1]
+            
+            if motdline[:2] == '- ':
+                motdline = motdline[2:]
+            
             ircobj.motd.append(params[1])
 
         irc_372 = staticmethod(irc_372)
@@ -309,7 +315,7 @@ class ClientConnection(_BaseConnection):
 
             if oldnick in ircobj.nicks:
                 nickobj = ircobj.nicks[oldnick]
-                nickobj.me.nick = newnick
+                nickobj.nick = newnick
                 
                 del ircobj.nicks[oldnick]
                 ircobj.nicks[newnick] = nickobj
@@ -745,6 +751,7 @@ class ServerConnection(_BaseConnection):
 class ServerListener(object):
     def __init__(self, bind_address, factory):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind(bind_address)
         self.socket.listen(1)
 

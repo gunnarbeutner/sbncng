@@ -22,3 +22,7 @@ reconnect queue
 support return values for events
 	* make sure that handlers call .stop_handlers() when they return something
 	* rework authentication_event to use that feature
+configuration
+client.irc_NICK processes NICK change for registered users, should only do that when it has an irc
+	connection
+fake "kick" user from chans when their irc connection is closed

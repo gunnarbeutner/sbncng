@@ -19,7 +19,7 @@ class Proxy():
     def _new_client_handler(self, evt, factory, clientobj):
         clientobj.authentication_event.add_handler(self._client_authentication_handler, Event.LOW_PRIORITY)
         clientobj.registration_event.add_handler(self._client_registration_handler, Event.LOW_PRIORITY)
-        
+
         clientobj.authentication_service = self
             
     def _client_authentication_handler(self, evt, clientobj, username, password):
@@ -35,7 +35,7 @@ class Proxy():
         evt.stop_handlers()
 
     def _client_registration_handler(self, event, clientobj):
-        clientobj.owner._client_registration_handler(event, clientobj)    
+        clientobj.owner._client_registration_handler(event, clientobj)  
 
 class ProxyUser(object):
     def __init__(self, proxy, name):
@@ -63,6 +63,14 @@ class ProxyUser(object):
         self.irc_connection.start()
 
     def _irc_closed_handler(self, evt, ircobj):
+        for clientobj in self.client_connections:
+            for channel in clientobj.channels:
+                clientobj.send_message('KICK', channel, clientobj.me.nick,
+                                       'You were disconnected from the IRC server.',
+                                       prefix=clientobj.server)
+
+            clientobj.channels = []
+        
         self.reconnect_to_irc()
 
     def _client_closed_handler(self, evt, clientobj):
@@ -72,7 +80,7 @@ class ProxyUser(object):
         clientobj.connection_closed_event.add_handler(self._client_closed_handler)
         self.client_connections.append(clientobj)
 
-        if clientobj.me.nick != self.irc_connection.me.nick:
+        if self.irc_connection.registered and clientobj.me.nick != self.irc_connection.me.nick:
             clientobj.send_message('NICK', self.irc_connection.me.nick, prefix=clientobj.me)
             clientobj.me.nick = self.irc_connection.me.nick
 
@@ -87,6 +95,7 @@ class ProxyUser(object):
             clientobj.nicks = self.irc_connection.nicks
 
         clientobj.command_received_event.add_handler(self._client_command_handler)
+        clientobj.command_events['testdisconnect'].add_handler(self._client_testdisconnect_handler)
 
     def _client_post_registration_timer(self, clientobj):
         for channel in self.irc_connection.channels:
@@ -95,16 +104,27 @@ class ProxyUser(object):
             clientobj.process_line('NAMES %s' % (channel))
 
     def _client_command_handler(self, evt, clientobj, command, prefix, params):
+        command = command.upper();
+
         if command in ['PASS', 'USER', 'QUIT']:
+            return
+
+        if self.irc_connection == None or (not self.irc_connection.registered and command != 'NICK'):
             return
 
         self.irc_connection.send_message(command, prefix=prefix, *params)
         evt.stop_handlers(event.Event.BUILTIN_PRIORITY)
 
+    def _client_testdisconnect_handler(self, evt, clientobj, prefix, params):
+        self.irc_connection.close('Fail.')
+        self.irc_connection = None
+
     def _irc_command_handler(self, evt, ircobj, command, prefix, params):
         if not ircobj.registered:
             return
         
+        command = command.upper();
+
         if command in ['ERROR']:
             return
     
