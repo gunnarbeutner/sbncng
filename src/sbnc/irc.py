@@ -1,4 +1,3 @@
-import string
 from collections import defaultdict
 import gevent
 from gevent import socket, dns
@@ -11,10 +10,12 @@ class RegistrationTimeoutError(Exception):
     pass
 
 class _BaseConnection(object):
+    MAX_LINELEN = 512
+
     def __init__(self, **kwargs):
-        """Named parameters can either be 'socket' (a socket) and 'address' (a tuple
-        containing the remote IP address and port) or just 'address' when you want
-        a new connection."""
+        """Named parameters can either be 'socket' (a socket) and 'address' (a
+        tuple containing the remote IP address and port) or just 'address' when
+        you want a new connection."""
 
         if 'socket' in kwargs:
             self.socket = kwargs['socket']
@@ -124,7 +125,8 @@ class _BaseConnection(object):
 
         command = command.upper()
 
-        have_cmd_handler = command in self.command_events and self.command_events[command].handlers_count > 0
+        have_cmd_handler = command in self.command_events and \
+            self.command_events[command].handlers_count > 0
 
         if have_cmd_handler:
             if not self.command_events[command].invoke(self, nickobj, params):
@@ -141,22 +143,7 @@ class _BaseConnection(object):
         self.connection.flush()
 
     def send_message(self, command, *parameter_list, **prefix):
-        params = list(parameter_list)
-
-        message = ''
-
-        if 'prefix' in prefix and prefix['prefix'] != None:
-            message = ':' + str(prefix['prefix']) + ' '
-
-        message = message + command
-
-        if len(params) > 0:
-            if len(params[-1]) > 0:
-                params[-1] = ':' + params[-1]
-
-            message = message + ' ' + string.join(params)
-
-        self.send_line(message)
+        self.send_line(utils.format_irc_message(command, *parameter_list, **prefix))
 
     def handle_connection_made(self):
         self._registration_timeout = gevent.Timeout.start_new(60, RegistrationTimeoutError)
@@ -244,6 +231,7 @@ class ClientConnection(_BaseConnection):
             ircobj.add_command_handler('KICK', ClientConnection.CommandHandlers.irc_KICK, Event.LOW_PRIORITY)
             ircobj.add_command_handler('QUIT', ClientConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
             ircobj.add_command_handler('353', ClientConnection.CommandHandlers.irc_353, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('366', ClientConnection.CommandHandlers.irc_366, Event.LOW_PRIORITY)
             ircobj.add_command_handler('433', ClientConnection.CommandHandlers.irc_433, Event.LOW_PRIORITY)
 
         register_handlers = staticmethod(register_handlers)
@@ -303,6 +291,7 @@ class ClientConnection(_BaseConnection):
             if len(params) < 2:
                 return
 
+            # TODO: strip the leading '- ' as that's not actually part of the MOTD text
             ircobj.motd.append(params[1])
 
         irc_372 = staticmethod(irc_372)
@@ -478,6 +467,8 @@ class ServerConnection(_BaseConnection):
     rpls = {
         'RPL_WELCOME': (1, 'Welcome to the Internet Relay Network %s'),
         'RPL_ISUPPORT': (5, 'are supported by this server'),
+        'RPL_NAMREPLY': (353, '%s'),
+        'RPL_ENDOFNAMES': (366, 'End of NAMES list'),
         'RPL_MOTDSTART': (375, '- %s Message of the day -'),
         'RPL_MOTD': (372, '- %s'),
         'RPL_ENDMOTD': (376, 'End of MOTD command'),
@@ -582,9 +573,11 @@ class ServerConnection(_BaseConnection):
             ircobj.add_command_handler('QUIT', ServerConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
             ircobj.add_command_handler('VERSION', ServerConnection.CommandHandlers.irc_VERSION, Event.LOW_PRIORITY)
             ircobj.add_command_handler('MOTD', ServerConnection.CommandHandlers.irc_MOTD, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('NAMES', ServerConnection.CommandHandlers.irc_NAMES, Event.LOW_PRIORITY)
 
         register_handlers = staticmethod(register_handlers)
 
+        # USER shroud * 0 :Gunnar Beutner
         def irc_USER(evt, ircobj, nickobj, params):
             if len(params) < 4:
                 ircobj.send_reply('ERR_NEEDMOREPARAMS', 'USER')
@@ -601,6 +594,7 @@ class ServerConnection(_BaseConnection):
 
         irc_USER = staticmethod(irc_USER)
 
+        # NICK shroud_
         def irc_NICK(evt, ircobj, nickobj, params):
             if len(params) < 1:
                 ircobj.send_reply('ERR_NONICKNAMEGIVEN', 'NICK')
@@ -624,6 +618,7 @@ class ServerConnection(_BaseConnection):
 
         irc_NICK = staticmethod(irc_NICK)
 
+        # PASS topsecret
         def irc_PASS(evt, ircobj, nickobj, params):
             if len(params) < 1:
                 ircobj.send_reply('ERR_NEEDMOREPARAMS', 'PASS')
@@ -644,6 +639,7 @@ class ServerConnection(_BaseConnection):
 
         irc_QUIT = staticmethod(irc_QUIT)
 
+        # VERSION
         def irc_VERSION(evt, ircobj, nickobj, params):
             if len(params) > 0:
                 return
@@ -676,6 +672,7 @@ class ServerConnection(_BaseConnection):
 
         irc_VERSION = staticmethod(irc_VERSION)
 
+        # MOTD
         def irc_MOTD(evt, ircobj, nickobj, params):
             if len(ircobj.motd) > 0:
                 ircobj.send_reply('RPL_MOTDSTART', format_args=(ircobj.server))
@@ -690,6 +687,60 @@ class ServerConnection(_BaseConnection):
             evt.stop_handlers()
 
         irc_MOTD = staticmethod(irc_MOTD)
+        
+        # NAMES #channel
+        def irc_NAMES(evt, ircobj, nickobj, params):
+            if len(params) != 1 or ',' in params[0]:
+                return
+            
+            channel = params[0]
+            
+            if channel not in ircobj.channels:
+                return
+            
+            channelobj = ircobj.channels[channel]
+            
+            if not channelobj.has_names:
+                return
+            
+            if channelobj.has_modes and 's' in channelobj.modes:
+                chantype = '@'
+            elif channelobj.has_modes and 'p' in channelobj.modes:
+                chantype = '*'
+            else:
+                chantype = '='
+            
+            nicklist = []
+            length = 0
+            
+            for nickobj in channelobj.nicks:
+                membership = channelobj.nicks[nickobj]
+                
+                length += len(nickobj.nick)
+                
+                prefixes = ''
+                
+                for mode in membership.modes:
+                    prefix = utils.mode_to_prefix(ircobj.isupport['PREFIX'], mode)
+                    
+                    if prefix != None:
+                        prefixes += prefix
+                
+                nicklist.append(prefixes + nickobj.nick)
+                
+                if length > 300:
+                    ircobj.send_reply('RPL_NAMREPLY', chantype, channel, format_args=(' '.join(nicklist)))
+                    nicklist = []
+                    length = 0
+            
+            if length > 0:
+                ircobj.send_reply('RPL_NAMREPLY', chantype, channel, format_args=(' '.join(nicklist)))
+
+            ircobj.send_reply('RPL_ENDOFNAMES', channel, prefix=ircobj.server)
+            
+            evt.stop_handlers()
+            
+        irc_NAMES = staticmethod(irc_NAMES)
 
 class ServerListener(object):
     def __init__(self, bind_address, factory):
@@ -726,9 +777,10 @@ class Channel(object):
         self.has_names = False
         self.has_topic = False
         self.has_bans = False
+        self.has_modes = False
 
     def add_nick(self, nickobj):
-        membership = ChannelMembership(nickobj, self)
+        membership = ChannelMembership(self, nickobj)
         self.nicks[nickobj] = membership
 
         return membership
@@ -737,7 +789,7 @@ class Channel(object):
         del self.nicks[nickobj]
 
 class ChannelMembership(object):
-    def __init__(self, nick, channel):
+    def __init__(self, channel, nick):
         self.tags = {}
         self.nick = nick
         self.channel = channel

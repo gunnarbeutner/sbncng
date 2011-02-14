@@ -19,3 +19,6 @@ comments
 MODE rpl parsing
 TOPIC rpl parsing
 reconnect queue
+support return values for events
+	* make sure that handlers call .stop_handlers() when they return something
+	* rework authentication_event to use that feature

@@ -1,4 +1,5 @@
 import re
+import string
 
 def parse_irc_message(line):
     """Parses an IRC message, returns a tuple containing the prefix (if
@@ -51,6 +52,24 @@ def parse_irc_message(line):
 
 _hostmask_regex = re.compile('^(.*)!(.*)@(.*)$')
 
+def format_irc_message(command, *parameter_list, **prefix):
+    params = list(parameter_list)
+
+    message = ''
+
+    if 'prefix' in prefix and prefix['prefix'] != None:
+        message = ':' + str(prefix['prefix']) + ' '
+
+    message = message + command
+
+    if len(params) > 0:
+        if len(params[-1]) > 0:
+            params[-1] = ':' + params[-1]
+
+        message = message + ' ' + string.join(params)
+
+    return message
+
 def parse_hostmask(hostmask):
     if isinstance(hostmask, dict):
         return hostmask
@@ -78,6 +97,9 @@ def parse_hostmask(hostmask):
 _nickmodes_regex = re.compile('^\((.*?)\)(.*?)$')
 
 def prefix_to_mode(prefixes, prefix):
+    if prefix == '':
+        return None
+   
     match = _nickmodes_regex.match(prefixes)
     
     if not match:
@@ -91,4 +113,17 @@ def prefix_to_mode(prefixes, prefix):
     return match.group(1)[index]
 
 def mode_to_prefix(prefixes, mode):
-    pass
+    if mode == '':
+        return None
+    
+    match = _nickmodes_regex.match(prefixes)
+    
+    if not match:
+        return None
+    
+    index = match.group(1).find(mode)
+    
+    if index == -1:
+        return None
+    
+    return match.group(2)[index]

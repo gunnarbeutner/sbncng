@@ -3,6 +3,7 @@ from collections import defaultdict
 class Event(object):
     """Multicast delegate used to handle events."""
 
+    BUILTIN_PRIORITY = 0 # pseudo priority, used to specify the code that called this event
     LOW_PRIORITY = 1
     NORMAL_PRIORITY = 2
     HIGH_PRIORITY = 3
@@ -12,6 +13,9 @@ class Event(object):
     
     def add_handler(self, handler, priority=NORMAL_PRIORITY):
         """Registers an event handler."""
+        
+        if not priority in [Event.LOW_PRIORITY, Event.NORMAL_PRIORITY, Event.HIGH_PRIORITY]:
+            raise ValueError("Invalid priority specified.")
         
         self._handlers[priority].add(handler)
     
