@@ -29,6 +29,8 @@ class QueuedLineWriter(object):
             except:
                 pass
     
+        self._connection.close()
+    
     def write_line(self, line):
         self._queue.put(line)
     
@@ -122,8 +124,7 @@ class _BaseConnection(object):
 
     def close(self, message=None):
         # TODO: move that into the DelayedStreamWriter class, once that's been implemented
-        self.socket.shutdown(socket.SHUT_RDWR)
-        self.socket.close()
+        self._line_writer.close()
 
     def handle_exception(self, exc):
         if exc == self._registration_timeout:
