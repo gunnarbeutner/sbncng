@@ -1,6 +1,6 @@
 from collections import defaultdict
 import gevent
-from gevent import socket, dns
+from gevent import socket, dns, queue
 from sbnc import utils
 from sbnc.event import Event
 from datetime import datetime
@@ -8,6 +8,36 @@ from weakref import WeakValueDictionary
 
 class RegistrationTimeoutError(Exception):
     pass
+
+class QueuedLineWriter(object):
+    def __init__(self, connection):
+        self._connection = connection
+        self._queue = queue.Queue()
+    
+    def start(self):
+        self._thread = gevent.spawn(self._run)
+    
+    def _run(self):
+        while True:
+            line = self._queue.get()
+            
+            if line == False:
+                break
+            
+            try:
+                self._connection.write(line + '\n')
+            except:
+                pass
+    
+    def write_line(self, line):
+        self._queue.put(line)
+    
+    def clear(self):
+        while self._queue.get(block=False) != None:
+            pass
+    
+    def close(self):
+        self._queue.put(False)
 
 class _BaseConnection(object):
     MAX_LINELEN = 512
@@ -63,14 +93,17 @@ class _BaseConnection(object):
         if self.socket == None:
             self.socket = socket.create_connection(self.socket_address)
 
-        self.connection = self.socket.makefile('w+', 1)
+        connection = self.socket.makefile('w+', 1)
+        
+        self._line_writer = QueuedLineWriter(connection)
+        self._line_writer.start()
 
         try:
             self.handle_connection_made()
 
             while True:
                 try:
-                    line = self.connection.readline()
+                    line = connection.readline()
 
                     if not line:
                         break
@@ -81,7 +114,7 @@ class _BaseConnection(object):
                         raise
         finally:
             try:
-                self.connection.close()
+                self._line_writer.close()
             except:
                 pass
 
@@ -143,7 +176,7 @@ class _BaseConnection(object):
             self.handle_unknown_command(nickobj, command, params)
 
     def send_line(self, line):
-        self.connection.write(line + '\n')
+        self._line_writer.write_line(line)
 
     def send_message(self, command, *parameter_list, **prefix):
         self.send_line(utils.format_irc_message(command, *parameter_list, **prefix))
@@ -224,6 +257,7 @@ class IRCConnection(_BaseConnection):
     class CommandHandlers(object):
         def register_handlers(ircobj):
             ircobj.add_command_handler('PING', IRCConnection.CommandHandlers.irc_PING, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('ERROR', IRCConnection.CommandHandlers.irc_ERROR, Event.LOW_PRIORITY)
             ircobj.add_command_handler('001', IRCConnection.CommandHandlers.irc_001, Event.LOW_PRIORITY)
             ircobj.add_command_handler('005', IRCConnection.CommandHandlers.irc_005, Event.LOW_PRIORITY)
             ircobj.add_command_handler('375', IRCConnection.CommandHandlers.irc_375, Event.LOW_PRIORITY)
@@ -249,6 +283,14 @@ class IRCConnection(_BaseConnection):
             evt.stop_handlers()
 
         irc_PING = staticmethod(irc_PING)
+
+        # ERROR :Registration timeout.
+        def irc_ERROR(evt, ircobj, nickobj, params):
+            ircobj.close()
+            
+            evt.stop_handlers()
+            
+        irc_ERROR = staticmethod(irc_ERROR)
 
         # :wineasy1.se.quakenet.org 001 shroud_ :Welcome to the QuakeNet IRC Network, shroud_
         def irc_001(evt, ircobj, nickobj, params):
