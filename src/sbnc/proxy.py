@@ -3,9 +3,9 @@ from sbnc.event import Event
 
 class Proxy():
     def __init__(self):
-        self.irc_factory = irc.ConnectionFactory(irc.ClientConnection)
+        self.irc_factory = irc.ConnectionFactory(irc.IRCConnection)
 
-        self.client_factory = irc.ConnectionFactory(irc.ServerConnection)
+        self.client_factory = irc.ConnectionFactory(irc.ClientConnection)
         self.client_factory.new_connection_event.add_handler(self._new_client_handler)
 
         self.users = {}
@@ -95,7 +95,7 @@ class ProxyUser(object):
             clientobj.nicks = self.irc_connection.nicks
 
         clientobj.command_received_event.add_handler(self._client_command_handler)
-        clientobj.command_events['testdisconnect'].add_handler(self._client_testdisconnect_handler)
+        clientobj.command_events['TESTDISCONNECT'].add_handler(self._client_testdisconnect_handler)
 
     def _client_post_registration_timer(self, clientobj):
         for channel in self.irc_connection.channels:

@@ -63,7 +63,7 @@ class _BaseConnection(object):
         if self.socket == None:
             self.socket = socket.create_connection(self.socket_address)
 
-        self.connection = self.socket.makefile()
+        self.connection = self.socket.makefile('w+', 1)
 
         try:
             self.handle_connection_made()
@@ -82,17 +82,19 @@ class _BaseConnection(object):
         finally:
             try:
                 self.connection.close()
-                self.connection_closed_event.invoke(self)
             except:
                 pass
 
+            self.connection_closed_event.invoke(self)
+
     def close(self, message=None):
-        self.connection.flush()
+        # TODO: move that into the DelayedStreamWriter class, once that's been implemented
         self.socket.shutdown(socket.SHUT_RDWR)
         self.socket.close()
 
     def handle_exception(self, exc):
-        if isinstance(exc, RegistrationTimeoutError):
+        if exc == self._registration_timeout:
+            self._registration_timeout.cancel()
             self.handle_registration_timeout()
             return True
 
@@ -142,7 +144,6 @@ class _BaseConnection(object):
 
     def send_line(self, line):
         self.connection.write(line + '\n')
-        self.connection.flush()
 
     def send_message(self, command, *parameter_list, **prefix):
         self.send_line(utils.format_irc_message(command, *parameter_list, **prefix))
@@ -184,7 +185,7 @@ class ConnectionFactory(object):
 
         return ircobj
 
-class ClientConnection(_BaseConnection):
+class IRCConnection(_BaseConnection):
     def __init__(self, **kwargs):
         _BaseConnection.__init__(self, **kwargs)
         
@@ -194,7 +195,7 @@ class ClientConnection(_BaseConnection):
         self.reg_password = None
         
     def handle_connection_made(self):
-        ClientConnection.CommandHandlers.register_handlers(self)
+        IRCConnection.CommandHandlers.register_handlers(self)
 
         _BaseConnection.handle_connection_made(self)
 
@@ -222,19 +223,19 @@ class ClientConnection(_BaseConnection):
 
     class CommandHandlers(object):
         def register_handlers(ircobj):
-            ircobj.add_command_handler('PING', ClientConnection.CommandHandlers.irc_PING, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('001', ClientConnection.CommandHandlers.irc_001, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('005', ClientConnection.CommandHandlers.irc_005, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('375', ClientConnection.CommandHandlers.irc_375, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('372', ClientConnection.CommandHandlers.irc_372, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('NICK', ClientConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('JOIN', ClientConnection.CommandHandlers.irc_JOIN, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('PART', ClientConnection.CommandHandlers.irc_PART, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('KICK', ClientConnection.CommandHandlers.irc_KICK, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('QUIT', ClientConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('353', ClientConnection.CommandHandlers.irc_353, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('366', ClientConnection.CommandHandlers.irc_366, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('433', ClientConnection.CommandHandlers.irc_433, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('PING', IRCConnection.CommandHandlers.irc_PING, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('001', IRCConnection.CommandHandlers.irc_001, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('005', IRCConnection.CommandHandlers.irc_005, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('375', IRCConnection.CommandHandlers.irc_375, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('372', IRCConnection.CommandHandlers.irc_372, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('NICK', IRCConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('JOIN', IRCConnection.CommandHandlers.irc_JOIN, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('PART', IRCConnection.CommandHandlers.irc_PART, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('KICK', IRCConnection.CommandHandlers.irc_KICK, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('QUIT', IRCConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('353', IRCConnection.CommandHandlers.irc_353, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('366', IRCConnection.CommandHandlers.irc_366, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('433', IRCConnection.CommandHandlers.irc_433, Event.LOW_PRIORITY)
 
         register_handlers = staticmethod(register_handlers)
 
@@ -467,7 +468,7 @@ class ClientConnection(_BaseConnection):
 
         irc_433 = staticmethod(irc_433)
 
-class ServerConnection(_BaseConnection):
+class ClientConnection(_BaseConnection):
     DEFAULT_SERVERNAME = 'server.shroudbnc.info'
 
     rpls = {
@@ -490,7 +491,7 @@ class ServerConnection(_BaseConnection):
         _BaseConnection.__init__(self, **kwargs)
 
         self.me.host = self.socket_address[0]
-        self.server.nick = ServerConnection.DEFAULT_SERVERNAME
+        self.server.nick = ClientConnection.DEFAULT_SERVERNAME
         
         self.authentication_event = Event()
         
@@ -502,7 +503,7 @@ class ServerConnection(_BaseConnection):
         if nick == None:
             nick = '*'
 
-        command = ServerConnection.rpls[rpl][0]
+        command = ClientConnection.rpls[rpl][0]
 
         try:
             command = str(int(command)).rjust(3, '0')
@@ -510,15 +511,15 @@ class ServerConnection(_BaseConnection):
             pass
 
         if 'format_args' in format_args:
-            text = ServerConnection.rpls[rpl][1] % format_args['format_args']
+            text = ClientConnection.rpls[rpl][1] % format_args['format_args']
         else:
-            text = ServerConnection.rpls[rpl][1]
+            text = ClientConnection.rpls[rpl][1]
 
         return self.send_message(command, *[nick] + list(params) + [text], \
                                 **{'prefix': self.server})
 
     def handle_connection_made(self):
-        ServerConnection.CommandHandlers.register_handlers(self)
+        ClientConnection.CommandHandlers.register_handlers(self)
 
         _BaseConnection.handle_connection_made(self)
 
@@ -573,13 +574,13 @@ class ServerConnection(_BaseConnection):
 
     class CommandHandlers(object):
         def register_handlers(ircobj):
-            ircobj.add_command_handler('USER', ServerConnection.CommandHandlers.irc_USER, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('NICK', ServerConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('PASS', ServerConnection.CommandHandlers.irc_PASS, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('QUIT', ServerConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('VERSION', ServerConnection.CommandHandlers.irc_VERSION, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('MOTD', ServerConnection.CommandHandlers.irc_MOTD, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('NAMES', ServerConnection.CommandHandlers.irc_NAMES, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('USER', ClientConnection.CommandHandlers.irc_USER, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('NICK', ClientConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('PASS', ClientConnection.CommandHandlers.irc_PASS, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('QUIT', ClientConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('VERSION', ClientConnection.CommandHandlers.irc_VERSION, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('MOTD', ClientConnection.CommandHandlers.irc_MOTD, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('NAMES', ClientConnection.CommandHandlers.irc_NAMES, Event.LOW_PRIORITY)
 
         register_handlers = staticmethod(register_handlers)
 
@@ -748,7 +749,7 @@ class ServerConnection(_BaseConnection):
             
         irc_NAMES = staticmethod(irc_NAMES)
 
-class ServerListener(object):
+class ClientListener(object):
     def __init__(self, bind_address, factory):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
