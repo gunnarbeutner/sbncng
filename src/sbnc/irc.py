@@ -44,20 +44,18 @@ class QueuedLineWriter(object):
 class _BaseConnection(object):
     MAX_LINELEN = 512
 
-    def __init__(self, **kwargs):
-        """Named parameters can either be 'socket' (a socket) and 'address' (a
-        tuple containing the remote IP address and port) or just 'address' when
-        you want a new connection."""
+    def __init__(self, address, socket=None):
+        """
+        Base class for IRC connections.
 
-        if 'socket' in kwargs:
-            self.socket = kwargs['socket']
-        else:
-            self.socket = None
+        address: A tuple containing the remote host/IP and port
+                 of the connection
+        socket: An existing socket for the connection, or None
+                if a new connection is to be established.
+        """
 
-        if 'address' in kwargs:
-            self.socket_address = kwargs['address']
-        else:
-            raise ValueError('missing argument: address')
+	self.socket_address = address
+	self.socket = socket
 
         self.connection_closed_event = Event()
         self.registration_event = Event()
@@ -123,7 +121,6 @@ class _BaseConnection(object):
             self.connection_closed_event.invoke(self)
 
     def close(self, message=None):
-        # TODO: move that into the DelayedStreamWriter class, once that's been implemented
         self._line_writer.close()
 
     def handle_exception(self, exc):
@@ -220,8 +217,8 @@ class ConnectionFactory(object):
         return ircobj
 
 class IRCConnection(_BaseConnection):
-    def __init__(self, **kwargs):
-        _BaseConnection.__init__(self, **kwargs)
+    def __init__(self, address, socket=None):
+        _BaseConnection.__init__(self, address, socket)
         
         self.reg_nickname = None
         self.reg_username = None
@@ -530,8 +527,8 @@ class ClientConnection(_BaseConnection):
         'ERR_ALREADYREGISTRED': (462, 'Unauthorized command (already registered)')
     }
 
-    def __init__(self, **kwargs):
-        _BaseConnection.__init__(self, **kwargs)
+    def __init__(self, address, socket):
+        _BaseConnection.__init__(self, address, socket)
 
         self.me.host = self.socket_address[0]
         self.server.nick = ClientConnection.DEFAULT_SERVERNAME

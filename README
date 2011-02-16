@@ -25,4 +25,5 @@ support return values for events
 configuration
 client.irc_NICK processes NICK change for registered users, should only do that when it has an irc
 	connection
-fake "kick" user from chans when their irc connection is closed
+move mode_to_prefix and prefix_to_mode into base irc class?
+use a timer for the registration timeout?

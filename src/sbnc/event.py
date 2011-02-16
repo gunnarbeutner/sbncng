@@ -48,17 +48,21 @@ class Event(object):
         return not self._handlers_stopped
     
     def get_handlers_count(self):
-        """Returns the number of handlers that are currently registered
-        for this event."""
+        """
+        Returns the number of handlers that are currently registered
+        for this event.
+        """
         
         return len(self._handlers)
     
     handlers_count = property(get_handlers_count)
     
     def stop_handlers(self, priority=None):
-        """Stops event handlers from being called for the current invocation. If
+        """
+        Stops event handlers from being called for the current invocation. If
         a priority is specified only those handlers with a priority equal to
-        or lower are stopped, otherwise all remaining handlers are skipped."""
+        or lower are stopped, otherwise all remaining handlers are skipped.
+        """
 
         self._handlers_stopped_priority = priority
         self._handlers_stopped = True

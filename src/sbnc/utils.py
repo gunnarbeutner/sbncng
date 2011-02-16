@@ -71,6 +71,8 @@ def format_irc_message(command, *parameter_list, **prefix):
     return message
 
 def parse_hostmask(hostmask):
+    """Parses a hostmask. Returns a tuple containing the nickname,
+    username and hostname."""
     if isinstance(hostmask, dict):
         return hostmask
 

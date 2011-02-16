@@ -95,7 +95,7 @@ class ProxyUser(object):
             clientobj.nicks = self.irc_connection.nicks
 
         clientobj.command_received_event.add_handler(self._client_command_handler)
-        clientobj.command_events['TESTDISCONNECT'].add_handler(self._client_testdisconnect_handler)
+        clientobj.add_command_handler('TESTDISCONNECT', self._client_testdisconnect_handler)
 
     def _client_post_registration_timer(self, clientobj):
         for channel in self.irc_connection.channels:
