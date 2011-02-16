@@ -1,10 +1,12 @@
+import time
+from copy import copy
 from collections import defaultdict
+from datetime import datetime
+from weakref import WeakValueDictionary
 import gevent
 from gevent import socket, dns, queue
 from sbnc import utils
 from sbnc.event import Event
-from datetime import datetime
-from weakref import WeakValueDictionary
 
 class RegistrationTimeoutError(Exception):
     pass
@@ -122,6 +124,9 @@ class _BaseConnection(object):
 
     def close(self, message=None):
         self._line_writer.close()
+        
+        if self._registration_timeout != None:
+            self._registration_timeout.cancel()
 
     def handle_exception(self, exc):
         if exc == self._registration_timeout:
@@ -246,7 +251,9 @@ class IRCConnection(_BaseConnection):
         self.send_message('NICK', self.reg_nickname)
 
     def close(self, message=None):
-        self.send_message('QUIT', message)
+        if message != None:
+            self.send_message('QUIT', message)
+
         _BaseConnection.close(self, message)
 
     def handle_unknown_command(self, nickobj, command, params):
@@ -268,6 +275,10 @@ class IRCConnection(_BaseConnection):
             ircobj.add_command_handler('353', IRCConnection.CommandHandlers.irc_353, Event.LOW_PRIORITY)
             ircobj.add_command_handler('366', IRCConnection.CommandHandlers.irc_366, Event.LOW_PRIORITY)
             ircobj.add_command_handler('433', IRCConnection.CommandHandlers.irc_433, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('331', IRCConnection.CommandHandlers.irc_331, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('332', IRCConnection.CommandHandlers.irc_332, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('333', IRCConnection.CommandHandlers.irc_333, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('TOPIC', IRCConnection.CommandHandlers.irc_TOPIC, Event.LOW_PRIORITY)
 
         register_handlers = staticmethod(register_handlers)
 
@@ -507,6 +518,82 @@ class IRCConnection(_BaseConnection):
             ircobj.send_message('NICK', newnick)
 
         irc_433 = staticmethod(irc_433)
+        
+        # :underworld2.no.quakenet.org 331 #channel :No topic is set
+        def irc_331(evt, ircobj, nickobj, params):
+            if len(params) < 3:
+                return
+            
+            channel = params[1]
+            
+            if not channel in ircobj.channels:
+                return
+            
+            channelobj = ircobj.channels[channel]
+
+            channelobj.topic_text = None
+            channelobj.topic_nick = None
+            channelobj.topic_time = None
+            channelobj.has_topic = True
+        
+        irc_331 = staticmethod(irc_331)
+
+        # :underworld2.no.quakenet.org 332 #channel :Some topic.
+        def irc_332(evt, ircobj, nickobj, params):
+            if len(params) < 3:
+                return
+            
+            channel = params[1]
+            
+            if not channel in ircobj.channels:
+                return
+            
+            channelobj = ircobj.channels[channel]
+
+            channelobj.topic_text = params[2]
+            
+            if channelobj.topic_nick != None:
+                channelobj.has_topic = True
+                
+        irc_332 = staticmethod(irc_332)
+
+        # :underworld2.no.quakenet.org 333 #channel Nick 1297723476
+        def irc_333(evt, ircobj, nickobj, params):
+            if len(params) < 4:
+                return
+            
+            channel = params[1]
+            
+            if not channel in ircobj.channels:
+                return
+            
+            channelobj = ircobj.channels[channel]
+
+            channelobj.topic_nick = Nick(ircobj, params[2])
+            channelobj.topic_time = datetime.fromtimestamp(int(params[3]))
+            
+            if channelobj.topic_text != None:
+                channelobj.has_topic = True
+                
+        irc_333 = staticmethod(irc_333)
+        
+        def irc_TOPIC(evt, ircobj, nickobj, params):
+            if len(params) < 2:
+                return
+            
+            channel = params[0]
+            
+            if not channel in ircobj.channels:
+                return
+            
+            channelobj = ircobj.channels[channel]
+            
+            channelobj.topic_text = params[1]
+            channelobj.topic_nick = copy(nickobj)
+            channelobj.topic_time = datetime.now()
+            channelobj.has_topic = True
+        
+        irc_TOPIC = staticmethod(irc_TOPIC)
 
 class ClientConnection(_BaseConnection):
     DEFAULT_SERVERNAME = 'server.shroudbnc.info'
@@ -514,7 +601,10 @@ class ClientConnection(_BaseConnection):
     rpls = {
         'RPL_WELCOME': (1, 'Welcome to the Internet Relay Network %s'),
         'RPL_ISUPPORT': (5, 'are supported by this server'),
-        'RPL_NAMREPLY': (353, '%s'),
+        'RPL_NOTOPIC': (331, 'No topic is set'),
+        'RPL_TOPIC': (332, None),
+        'RPL_TOPICNICK': (333, None),
+        'RPL_NAMREPLY': (353, None),
         'RPL_ENDOFNAMES': (366, 'End of NAMES list'),
         'RPL_MOTDSTART': (375, '- %s Message of the day -'),
         'RPL_MOTD': (372, '- %s'),
@@ -554,8 +644,13 @@ class ClientConnection(_BaseConnection):
             text = ClientConnection.rpls[rpl][1] % format_args['format_args']
         else:
             text = ClientConnection.rpls[rpl][1]
+            
+        if text == None:
+            text_list = []
+        else:
+            text_list = [text]
 
-        return self.send_message(command, *[nick] + list(params) + [text], \
+        return self.send_message(command, *[nick] + list(params) + text_list, \
                                 **{'prefix': self.server})
 
     def handle_connection_made(self):
@@ -618,11 +713,18 @@ class ClientConnection(_BaseConnection):
             ircobj.add_command_handler('NICK', ClientConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
             ircobj.add_command_handler('PASS', ClientConnection.CommandHandlers.irc_PASS, Event.LOW_PRIORITY)
             ircobj.add_command_handler('QUIT', ClientConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
+            
+            ircobj.registration_event.add_handler(ClientConnection.CommandHandlers._irc_registration_handler, Event.LOW_PRIORITY)
+            
+        register_handlers = staticmethod(register_handlers)
+
+        def _irc_registration_handler(evt, ircobj):
             ircobj.add_command_handler('VERSION', ClientConnection.CommandHandlers.irc_VERSION, Event.LOW_PRIORITY)
             ircobj.add_command_handler('MOTD', ClientConnection.CommandHandlers.irc_MOTD, Event.LOW_PRIORITY)
             ircobj.add_command_handler('NAMES', ClientConnection.CommandHandlers.irc_NAMES, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('TOPIC', ClientConnection.CommandHandlers.irc_TOPIC, Event.LOW_PRIORITY)
 
-        register_handlers = staticmethod(register_handlers)
+        _irc_registration_handler = staticmethod(_irc_registration_handler)
 
         # USER shroud * 0 :Gunnar Beutner
         def irc_USER(evt, ircobj, nickobj, params):
@@ -776,18 +878,44 @@ class ClientConnection(_BaseConnection):
                 nicklist.append(prefixes + nickobj.nick)
                 
                 if length > 300:
-                    ircobj.send_reply('RPL_NAMREPLY', chantype, channel, format_args=(' '.join(nicklist)))
+                    ircobj.send_reply('RPL_NAMREPLY', chantype, channel, ' '.join(nicklist))
                     nicklist = []
                     length = 0
             
             if length > 0:
-                ircobj.send_reply('RPL_NAMREPLY', chantype, channel, format_args=(' '.join(nicklist)))
+                ircobj.send_reply('RPL_NAMREPLY', chantype, channel, ' '.join(nicklist))
 
             ircobj.send_reply('RPL_ENDOFNAMES', channel, prefix=ircobj.server)
             
             evt.stop_handlers()
             
         irc_NAMES = staticmethod(irc_NAMES)
+
+        # TOPIC #channel
+        def irc_TOPIC(evt, ircobj, nickobj, params):
+            if len(params) != 1:
+                return
+            
+            channel = params[0]
+            
+            if channel not in ircobj.channels:
+                return
+            
+            channelobj = ircobj.channels[channel]
+            
+            if not channelobj.has_topic:
+                return
+            
+            if channelobj.topic_text == None:
+                ircobj.send_reply('RPL_NOTOPIC', channel)
+            else:
+                ircobj.send_reply('RPL_TOPIC', channel, channelobj.topic_text)
+                ircobj.send_reply('RPL_TOPICNICK', channel, str(channelobj.topic_nick), \
+                                  str(time.mktime(channelobj.topic_time.timetuple())))
+                
+            evt.stop_handlers()
+
+        irc_TOPIC = staticmethod(irc_TOPIC)
 
 class ClientListener(object):
     def __init__(self, bind_address, factory):
@@ -820,7 +948,7 @@ class Channel(object):
 
         self.topic_text = None
         self.topic_time = None
-        self.topic_hostmask = None
+        self.topic_nick = None
         
         self.has_names = False
         self.has_topic = False
