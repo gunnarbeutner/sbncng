@@ -54,8 +54,8 @@ class _BaseConnection(object):
                 if a new connection is to be established.
         """
 
-	self.socket_address = address
-	self.socket = socket
+        self.socket_address = address
+        self.socket = socket
 
         self.connection_closed_event = Event()
         self.registration_event = Event()
