@@ -1,29 +1,7 @@
--Async sockets: gevent
--TCL: pkg Tkinter
--Async DNS: gevent
--SSL: pkg gevent.ssl
--xml-rpc: pkg xmlrpc
--timers: gevent.Timeout(?)
-
 Planned Features:
 cmd->rpl tracking
+xml-rpc api
 
 Later:
 IPv6
 SSL
-
-TODO:
-flood protection
-Connection queueing
-comments
-MODE rpl parsing
-TOPIC rpl parsing
-reconnect queue
-support return values for events
-	* make sure that handlers call .stop_handlers() when they return something
-	* rework authentication_event to use that feature
-configuration
-client.irc_NICK processes NICK change for registered users, should only do that when it has an irc
-	connection
-move mode_to_prefix and prefix_to_mode into base irc class?
-use a timer for the registration timeout?
