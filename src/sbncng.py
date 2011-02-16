@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from sbnc import irc, proxy
 
 p = proxy.Proxy()
