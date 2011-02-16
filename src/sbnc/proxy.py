@@ -1,3 +1,4 @@
+import gevent
 from sbnc import irc, timer, event
 from sbnc.event import Event
 
@@ -70,6 +71,8 @@ class ProxyUser(object):
                                        prefix=clientobj.server)
 
             clientobj.channels = []
+        
+        gevent.sleep(30)
         
         self.reconnect_to_irc()
 
