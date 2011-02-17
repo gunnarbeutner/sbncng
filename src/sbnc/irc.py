@@ -1,3 +1,4 @@
+import sys
 import time
 from copy import copy
 from collections import defaultdict
@@ -7,13 +8,12 @@ import gevent
 from gevent import socket, dns, queue
 from sbnc import utils
 from sbnc.event import Event
-
-class RegistrationTimeoutError(Exception):
-    pass
+from sbnc.timer import Timer
 
 class QueuedLineWriter(object):
-    def __init__(self, connection):
-        self._connection = connection
+    def __init__(self, sock):
+        self._socket = sock
+        self._connection = sock.makefile('w+', 1)
         self._queue = queue.Queue()
     
     def start(self):
@@ -32,6 +32,8 @@ class QueuedLineWriter(object):
                 pass
     
         self._connection.close()
+        self._socket.shutdown(socket.SHUT_RDWR)
+        self._socket.close()
     
     def write_line(self, line):
         self._queue.put(line)
@@ -94,14 +96,14 @@ class _BaseConnection(object):
     def _run(self):
         if self.socket == None:
             self.socket = socket.create_connection(self.socket_address)
-
-        connection = self.socket.makefile('w+', 1)
         
-        self._line_writer = QueuedLineWriter(connection)
+        self._line_writer = QueuedLineWriter(self.socket)
         self._line_writer.start()
 
         try:
             self.handle_connection_made()
+
+            connection = self.socket.makefile('w+', 1)
 
             while True:
                 try:
@@ -111,28 +113,28 @@ class _BaseConnection(object):
                         break
 
                     self.process_line(line)
-                except Exception, exc:
+                except:
+                    exc = sys.exc_info()[1]
                     if not self.handle_exception(exc):
                         raise
         finally:
             try:
-                self._line_writer.close()
+                # Not calling possibly derived methods
+                # as they might not be safe to call from here.
+                _BaseConnection.close(self)
             except:
                 pass
 
             self.connection_closed_event.invoke(self)
 
-    def close(self, message=None):
-        self._line_writer.close()
-        
+    def close(self, message=None):        
         if self._registration_timeout != None:
             self._registration_timeout.cancel()
 
+        self._line_writer.close()
+
     def handle_exception(self, exc):
-        if exc == self._registration_timeout:
-            self._registration_timeout.cancel()
-            self.handle_registration_timeout()
-            return True
+        pass
 
     def get_nick(self, hostmask):
         if hostmask == None:
@@ -185,19 +187,23 @@ class _BaseConnection(object):
         self.send_line(utils.format_irc_message(command, *parameter_list, **prefix))
 
     def handle_connection_made(self):
-        self._registration_timeout = gevent.Timeout.start_new(60, RegistrationTimeoutError)
+        self._registration_timeout = Timer(30, self._registration_timeout_timer)
+        self._registration_timeout.start()
 
     def handle_unknown_command(self, command, nickobj, params):
         pass
 
     def register_user(self):
-        self.registered = True
-
         self._registration_timeout.cancel()
         self._registration_timeout = None
 
+        self.registered = True
+
         self.registration_event.invoke(self)
 
+    def _registration_timeout_timer(self):
+        self.handle_registration_timeout()
+        
     def handle_registration_timeout(self):
         self.close('Registration timeout detected.')
 

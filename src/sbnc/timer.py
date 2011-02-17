@@ -11,19 +11,6 @@ class Timer(object):
         self._args = args
         self._greenlet = None
     
-    def create(interval, callback, *args):
-        """
-        Convenience function that creates a timer and starts it
-        right away.
-        """
-
-        timer = Timer(interval, callback, *args)
-        timer.start()
-
-        return timer
-        
-    create = staticmethod(create)
-    
     def start(self):
         """
         Starts the timer and makes sure that the timer's callback
@@ -54,5 +41,5 @@ class Timer(object):
         Disables the timer.
         """
 
-        self._greenlet.kill()
+        self._greenlet.kill(block=False)
         self._greenlet = None
