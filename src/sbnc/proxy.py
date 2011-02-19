@@ -11,26 +11,19 @@ class Proxy():
         self.client_factory.new_connection_event.add_handler(self._new_client_handler)
 
         self.users = {}
-
-        self.users['shroud'] = ProxyUser(self, 'shroud')
-        self.users['shroud'].password = 'keks'
-
-        #self.users['thommey'] = ProxyUser(self, 'thommey')
-        #self.users['thommey'].password = 'keks'
+        self.config = {}
 
     def _new_client_handler(self, evt, factory, clientobj):
         clientobj.authentication_event.add_handler(self._client_authentication_handler, Event.LOW_PRIORITY)
         clientobj.registration_event.add_handler(self._client_registration_handler, Event.LOW_PRIORITY)
 
-        clientobj.authentication_service = self
-            
     def _client_authentication_handler(self, evt, clientobj, username, password):
         if not username in self.users:
             return None
         
         userobj = self.users[clientobj.me.user]
         
-        if userobj.password != password:
+        if not userobj.check_password(password):
             return None
         
         clientobj.owner = userobj
@@ -39,11 +32,25 @@ class Proxy():
     def _client_registration_handler(self, event, clientobj):
         clientobj.owner._client_registration_handler(event, clientobj)  
 
+    def create_user(self, name):
+        user = ProxyUser(self, name)
+        self.users[name] = user
+        
+        # TODO: event
+        
+        return user
+
+    def remove_user(self, name):
+        # TODO: event
+
+        del self.users[name]
+
 class ProxyUser(object):
     def __init__(self, proxy, name):
         self.proxy = proxy
         self.name = name
-        self.password = None
+        
+        self.config = {}
         
         self.irc_connection = None
         self.client_connections = []
@@ -143,6 +150,9 @@ class ProxyUser(object):
                 mapped_prefix = prefix
 
             clientobj.send_message(command, prefix=mapped_prefix, *params)
+
+    def check_password(self, password):
+        return self.config['password'] == password
 
     # TODO: irc_registration event, needs to force-change client's nick if different
     # from the irc connection
