@@ -2,8 +2,6 @@ Connection queueing
 comments
 MODE rpl parsing
 MODE command (cached)
-TOPIC rpl parsing
-TOPIC command (cached)
 support return values for events
 	* make sure that handlers call .stop_handlers() when they return something
 	* rework authentication_event to use that feature
@@ -12,5 +10,4 @@ client.irc_NICK processes NICK change for registered users, should only do that 
 	connection
 QueuedLineWriter: support for priorities and delays ('flood protection')
 sync user's nick when we reconnect to irc
-use a timer for registration timeouts?
 web interface
