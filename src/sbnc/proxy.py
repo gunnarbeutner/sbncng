@@ -1,6 +1,7 @@
 import gevent
-from sbnc import irc, timer, event
+from sbnc import irc, event
 from sbnc.event import Event
+from sbnc.timer import Timer
 
 class Proxy():
     def __init__(self):
@@ -89,7 +90,8 @@ class ProxyUser(object):
 
             self.irc_connection.send_message('NICK', clientobj.me.nick)
 
-        timer.Timer.create(0, self._client_post_registration_timer, clientobj)
+        timer = Timer(0, self._client_post_registration_timer, clientobj)
+        timer.start()
 
         if self.irc_connection != None:
             clientobj.motd = self.irc_connection.motd
