@@ -22,9 +22,11 @@ class TestPlugin(Plugin):
     description = 'Just a test plugin.'
 
     def __init__(self):
-        proxy = ServiceRegistry.get('info.shroudbnc.services.proxy')
+        sr = ServiceRegistry.get_instance()
+        proxy = sr.get('info.shroudbnc.services.proxy')
         
         user = proxy.create_user('shroud')
         user.password = 'keks'
-        
-ServiceRegistry.register('info.shroudbnc.plugins.plugin101', TestPlugin())
+
+sr = ServiceRegistry.get_instance()        
+sr.register('info.shroudbnc.plugins.plugin101', TestPlugin())
