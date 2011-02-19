@@ -285,6 +285,7 @@ class IRCConnection(_BaseConnection):
             ircobj.add_command_handler('332', IRCConnection.CommandHandlers.irc_332, Event.LOW_PRIORITY)
             ircobj.add_command_handler('333', IRCConnection.CommandHandlers.irc_333, Event.LOW_PRIORITY)
             ircobj.add_command_handler('TOPIC', IRCConnection.CommandHandlers.irc_TOPIC, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('329', IRCConnection.CommandHandlers.irc_329, Event.LOW_PRIORITY)
 
         register_handlers = staticmethod(register_handlers)
 
@@ -569,41 +570,63 @@ class IRCConnection(_BaseConnection):
                 return
             
             channel = params[1]
+            topic_nick = params[2]
+            ts = params[3]
             
             if not channel in ircobj.channels:
                 return
             
             channelobj = ircobj.channels[channel]
 
-            channelobj.topic_nick = Nick(ircobj, params[2])
-            channelobj.topic_time = datetime.fromtimestamp(int(params[3]))
+            channelobj.topic_nick = Nick(ircobj, topic_nick)
+            channelobj.topic_time = datetime.fromtimestamp(int(ts))
             
             if channelobj.topic_text != None:
                 channelobj.has_topic = True
                 
         irc_333 = staticmethod(irc_333)
         
+        # :shroud!shroud@help TOPIC #channel :new topic
         def irc_TOPIC(evt, ircobj, nickobj, params):
             if len(params) < 2:
                 return
             
             channel = params[0]
+            topic = params[1]
             
             if not channel in ircobj.channels:
                 return
             
             channelobj = ircobj.channels[channel]
             
-            channelobj.topic_text = params[1]
+            channelobj.topic_text = topic
             channelobj.topic_nick = copy(nickobj)
             channelobj.topic_time = datetime.now()
             channelobj.has_topic = True
         
         irc_TOPIC = staticmethod(irc_TOPIC)
+        
+        # :underworld2.no.quakenet.org 329 shroud #sbfl 1233690341
+        def irc_329(evt, ircobj, nickobj, params):
+            if len(params) < 3:
+                return
+            
+            channel = params[1]
+            ts = params[2]
+            
+            if not channel in ircobj.channels:
+                return
+            
+            channelobj = ircobj.channels[channel]
+            
+            channelobj.creation_time = datetime.fromtimestamp(int(ts))
+            
+        irc_329 = staticmethod(irc_329)
 
 class ClientConnection(_BaseConnection):
     DEFAULT_SERVERNAME = 'server.shroudbnc.info'
 
+    # See http://www.alien.net.au/irc/irc2numerics.html for details.
     rpls = {
         'RPL_WELCOME': (1, 'Welcome to the Internet Relay Network %s'),
         'RPL_ISUPPORT': (5, 'are supported by this server'),
@@ -950,7 +973,9 @@ class Channel(object):
         self.tags = {}
         self.nicks = {}
         self.bans = []
-        self.jointime = datetime.now()
+        self.modes = []
+        self.join_time = datetime.now()
+        self.creation_time = None
 
         self.topic_text = None
         self.topic_time = None
