@@ -609,7 +609,7 @@ class ClientConnection(_BaseConnection):
         'RPL_ISUPPORT': (5, 'are supported by this server'),
         'RPL_NOTOPIC': (331, 'No topic is set'),
         'RPL_TOPIC': (332, None),
-        'RPL_TOPICNICK': (333, None),
+        'RPL_TOPICWHOTIME': (333, None),
         'RPL_NAMREPLY': (353, None),
         'RPL_ENDOFNAMES': (366, 'End of NAMES list'),
         'RPL_MOTDSTART': (375, '- %s Message of the day -'),
@@ -916,7 +916,7 @@ class ClientConnection(_BaseConnection):
                 ircobj.send_reply('RPL_NOTOPIC', channel)
             else:
                 ircobj.send_reply('RPL_TOPIC', channel, channelobj.topic_text)
-                ircobj.send_reply('RPL_TOPICNICK', channel, str(channelobj.topic_nick), \
+                ircobj.send_reply('RPL_TOPICWHOTIME', channel, str(channelobj.topic_nick), \
                                   str(time.mktime(channelobj.topic_time.timetuple())))
                 
             evt.stop_handlers()
