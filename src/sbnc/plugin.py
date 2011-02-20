@@ -18,6 +18,9 @@
 class Plugin(object):
     """A plugin is a service object that supports being controlled by users."""
 
+    package = None
+    """Package name for the plugin."""
+
     name = None
     """The name of the plugin."""
 
@@ -75,5 +78,5 @@ class ServiceRegistry(dict):
 
         try:
             return self[name]
-        except IndexError:
+        except KeyError:
             return None

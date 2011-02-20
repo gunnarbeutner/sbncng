@@ -21,8 +21,9 @@ from sbnc.utils import parse_irc_message
 class UIPlugin(Plugin):
     """User interface plugin. Provides support for /msg -sBNC <command> and /sbnc <command>"""
 
+    package = 'info.shroudbnc.plugins.ui'
     name = 'UIPlugin'
-    description = UIPlugin.__doc__
+    description = __doc__
 
     _identity = '-sBNC!bouncer@shroudbnc.info'
 
@@ -99,4 +100,6 @@ class UIPlugin(Plugin):
         pass
 
 sr = ServiceRegistry.get_instance()
-sr.register('info.shroudbnc.plugins.ui', UIPlugin(sr))
+
+if sr.get(UIPlugin.package) == None:
+    sr.register(UIPlugin.package, UIPlugin(sr))
