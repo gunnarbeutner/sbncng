@@ -16,6 +16,8 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 class Plugin(object):
+    """A plugin is a service object that supports being controlled by users."""
+
     name = None
     """The name of the plugin."""
 

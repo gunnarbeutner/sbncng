@@ -26,7 +26,7 @@ class TestPlugin(Plugin):
         proxy = sr.get('info.shroudbnc.services.proxy')
         
         user = proxy.create_user('shroud')
-        user.password = 'keks'
+        user.config['password'] = 'keks'
 
 sr = ServiceRegistry.get_instance()        
 sr.register('info.shroudbnc.plugins.plugin101', TestPlugin())
