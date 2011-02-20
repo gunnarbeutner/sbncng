@@ -9,5 +9,4 @@ configuration
 client.irc_NICK processes NICK change for registered users, should only do that when it has no irc
 	connection
 QueuedLineWriter: support for priorities and delays ('flood protection')
-sync user's nick when we reconnect to irc
 web interface

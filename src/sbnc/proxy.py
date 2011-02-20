@@ -85,6 +85,7 @@ class ProxyUser(object):
         
         self.irc_connection.command_received_event.add_handler(self._irc_command_handler)
         self.irc_connection.connection_closed_event.add_handler(self._irc_closed_handler)
+        self.irc_connection.registration_event.add_handler(self._irc_registration_handler)
         
         self.irc_connection.start()
 
@@ -131,6 +132,12 @@ class ProxyUser(object):
             clientobj.send_message('JOIN', channel, prefix=self.irc_connection.me)
             clientobj.process_line('TOPIC %s' % (channel))
             clientobj.process_line('NAMES %s' % (channel))
+
+    def _irc_registration_handler(self, evt, ircobj):
+        for clientobj in self.client_connections:
+            if clientobj.me.nick != ircobj.me.nick:
+                clientobj.send_message('NICK', self.irc_connection.me.nick, prefix=clientobj.me)
+                clientobj.me.nick = self.irc_connection.me.nick
 
     def _client_command_handler(self, evt, clientobj, command, prefix, params):
         command = command.upper();
