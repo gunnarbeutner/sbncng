@@ -27,9 +27,11 @@ class Plugin(object):
     def unload(self):
         """
         Called when the plugin is to be unloaded, giving the plugin a chance to clean up.
+        Plugins should return False in case they don't support unloading or can't
+        be unloaded right now.
         """
 
-        pass
+        return False
     
 class ServiceRegistry(dict):
     """
