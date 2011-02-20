@@ -655,6 +655,7 @@ class ClientConnection(_BaseConnection):
         'RPL_MOTDSTART': (375, '- %s Message of the day -'),
         'RPL_MOTD': (372, '- %s'),
         'RPL_ENDMOTD': (376, 'End of MOTD command'),
+        'ERR_NOTEXTTOSEND': (412, 'No text to send'),
         'ERR_UNKNOWNCOMMAND': (421, 'Unknown command'),
         'ERR_NOMOTD': (422, 'MOTD File is missing'),
         'ERR_NONICKNAMEGIVEN': (431, 'No nickname given'),
@@ -1074,7 +1075,7 @@ class Nick(object):
         if hostmask_dict['host'] != None and self.host != hostmask_dict['host']:
             self.host = hostmask_dict['host']
 
-    def get_channels(self):
+    def _get_channels(self):
         for channel in self._ircobj.channels:
             channelobj = self._ircobj.channels[channel]
             
@@ -1083,4 +1084,4 @@ class Nick(object):
 
         raise StopIteration
     
-    channels = property(get_channels)
+    channels = property(_get_channels)

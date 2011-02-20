@@ -18,7 +18,7 @@
 import re
 import string
 
-def parse_irc_message(line):
+def parse_irc_message(line, can_have_prefix=True):
     """Parses an IRC message, returns a tuple containing the prefix (if
     any, None otherwise), the command and a list containing the arguments"""
 
@@ -32,7 +32,7 @@ def parse_irc_message(line):
     last_arg = None
     
     for token in tokens:
-        if first and len(token) > 0 and token[0] == ':':
+        if first and len(token) > 0 and token[0] == ':' and can_have_prefix:
             token = token[1:]
             prefix = token
             first = False

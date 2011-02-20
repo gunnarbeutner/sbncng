@@ -29,8 +29,16 @@ class Proxy():
 
         self.users = {}
         self.config = {}
+        
+        # high-level helper events, to make things easier for plugins
+        self.new_client_event = Event()
+        self.client_registration_event = Event()
 
     def _new_client_handler(self, evt, factory, clientobj):
+        if not self.new_client_event.invoke(clientobj):
+            evt.stop_handlers()
+            return
+
         clientobj.authentication_event.add_handler(self._client_authentication_handler, Event.LOW_PRIORITY)
         clientobj.registration_event.add_handler(self._client_registration_handler, Event.LOW_PRIORITY)
 
@@ -46,8 +54,12 @@ class Proxy():
         clientobj.owner = userobj
         evt.stop_handlers()
 
-    def _client_registration_handler(self, event, clientobj):
-        clientobj.owner._client_registration_handler(event, clientobj)  
+    def _client_registration_handler(self, evt, clientobj):
+        if not self.client_registration_event.invoke(clientobj):
+            evt.stop_handlers()
+            return
+
+        clientobj.owner._client_registration_handler(evt, clientobj)
 
     def create_user(self, name):
         user = ProxyUser(self, name)
