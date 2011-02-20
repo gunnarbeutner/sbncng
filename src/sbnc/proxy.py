@@ -19,8 +19,11 @@ import gevent
 from sbnc import irc, event
 from sbnc.event import Event
 from sbnc.timer import Timer
+from sbnc.plugin import Service, ServiceRegistry
 
-class Proxy():
+class Proxy(Service):
+    package = 'info.shroudbnc.services.proxy'
+    
     def __init__(self):
         self.irc_factory = irc.ConnectionFactory(irc.IRCConnection)
 
@@ -192,3 +195,5 @@ class ProxyUser(object):
 
     # TODO: irc_registration event, needs to force-change client's nick if different
     # from the irc connection
+
+ServiceRegistry.register(Proxy)

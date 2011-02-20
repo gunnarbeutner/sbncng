@@ -16,17 +16,23 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 from sbnc.plugin import Plugin, ServiceRegistry
+from sbnc.proxy import Proxy
+from plugins.ui import UIPlugin
+
+proxy_svc = ServiceRegistry.get(Proxy.package)
+ui_svc = ServiceRegistry.get(UIPlugin.package)
 
 class TestPlugin(Plugin):
     name = 'Test Plugin 101'
     description = 'Just a test plugin.'
-
+    
     def __init__(self):
-        sr = ServiceRegistry.get_instance()
-        proxy = sr.get('info.shroudbnc.services.proxy')
-        
-        user = proxy.create_user('shroud')
+        user = proxy_svc.create_user('shroud')
         user.config['password'] = 'keks'
+        
+        ui_svc.register_command('moo', self._cmd_moo_handler, 'User', 'says moo', 'Syntax: moo')
 
-sr = ServiceRegistry.get_instance()        
-sr.register('info.shroudbnc.plugins.plugin101', TestPlugin())
+    def _cmd_moo_handler(self, clientobj, params, notice):
+        ui_svc.send_sbnc_reply(clientobj, 'Moo!', notice)
+
+ServiceRegistry.register(TestPlugin)

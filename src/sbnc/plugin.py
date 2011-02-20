@@ -15,11 +15,14 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
-class Plugin(object):
-    """A plugin is a service object that supports being controlled by users."""
+class Service(object):
+    """A service is a singleton object with a well-known name."""
 
     package = None
-    """Package name for the plugin."""
+    """Package name for the service."""
+    
+class Plugin(Service):
+    """A plugin is a service object that supports being controlled by users."""
 
     name = None
     """The name of the plugin."""
@@ -36,47 +39,43 @@ class Plugin(object):
 
         return False
     
-class ServiceRegistry(dict):
+class ServiceRegistry(object):
     """
-    Service registry singleton class. Plugins can register service objects here which can be
-    retrieved by other plugins using their name.
+    Service registry. Plugins can register service objects here which can be
+    retrieved by other plugins using their package name.
     
     A service name is an FQDN in reverse order, e.g. info.shroudbnc.services.proxy
     
-    Service objects can be of any type.
+    Service objects should inherit from the Service class.
     """
     
-    _instance = None
+    services = {}
 
-    def __new__(cls, *args, **kwargs):
-        # Make sure there's only ever one instance of the ServiceRegistry class
-        if not cls._instance:
-            cls._instance = super(ServiceRegistry, cls).__new__(
-                                cls, *args, **kwargs)
-        return cls._instance
-
-    def get_instance():
-        """
-        Returns the ServiceRegistry singleton object.
-        """
-
-        return ServiceRegistry()
-    
-    get_instance = staticmethod(get_instance)
-
-    def register(self, name, serviceobj):
+    def register(cls):
         """
         Registers a new service.
         """
         
-        self[name] = serviceobj
-    
-    def get(self, name):
+        if not issubclass(cls, Service):
+            raise ValueError('Class must derive from Service class.')
+        
+        if cls.package in ServiceRegistry.services:
+            return
+        
+        serviceobj = cls()
+        cls.instance = serviceobj
+        ServiceRegistry.services[cls.package] = serviceobj
+        
+    register = staticmethod(register)
+        
+    def get(name):
         """
         Retrieves a service object.
         """
 
         try:
-            return self[name]
+            return ServiceRegistry.services[name]
         except KeyError:
             return None
+        
+    get = staticmethod(get)

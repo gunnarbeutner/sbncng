@@ -16,18 +16,16 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
-from sbnc import irc, proxy
+from sbnc.irc import ClientListener
+from sbnc.proxy import Proxy
 from sbnc.plugin import ServiceRegistry
 
-proxy = proxy.Proxy()
-
-sr = ServiceRegistry.get_instance()
-sr.register('info.shroudbnc.services.proxy', proxy)
+proxy_svc = ServiceRegistry.get(Proxy.package)
 
 execfile('plugins/plugin101.py')
 execfile('plugins/ui.py')
 
-listener = irc.ClientListener( ('0.0.0.0', 9000), proxy.client_factory )
+listener = ClientListener( ('0.0.0.0', 9000), proxy_svc.client_factory )
 task = listener.start()
 
 task.join()

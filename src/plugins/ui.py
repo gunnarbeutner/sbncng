@@ -16,6 +16,7 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 from sbnc.plugin import Plugin, ServiceRegistry
+from sbnc.proxy import Proxy
 from sbnc.utils import parse_irc_message
 
 class UIAccessCheck(object):
@@ -35,6 +36,8 @@ class UIAccessCheck(object):
 
     admin = staticmethod(admin)
 
+proxy_svc = ServiceRegistry.get(Proxy.package)
+
 class UIPlugin(Plugin):
     """User interface plugin. Provides support for /msg -sBNC <command> and /sbnc <command>"""
 
@@ -44,22 +47,20 @@ class UIPlugin(Plugin):
 
     _identity = '-sBNC!bouncer@shroudbnc.info'
 
-    def __init__(self, service_registry):
-        self._proxy = service_registry.get('info.shroudbnc.services.proxy')
-        
+    def __init__(self):
         self.commands = {}
         self.settings = {}
         self.usersettings = {}
         
         # register handlers for existing client connections
-        for user in self._proxy.users:
-            userobj = self._proxy.users[user]
+        for user in proxy_svc.users:
+            userobj = proxy_svc.users[user]
             
             for clientobj in userobj.client_connections:
                 self._register_handlers(clientobj)
         
         # make sure new clients also get the event handlers
-        self._proxy.client_registration_event.add_handler(self._client_registration_handler)
+        proxy_svc.client_registration_event.add_handler(self._client_registration_handler)
         
         self.register_command('help', self._cmd_help_handler, 'User',
                               'displays a list of commands or information about individual commands',
@@ -187,18 +188,15 @@ class UIPlugin(Plugin):
                     
                 cmds[cmdobj['category']][command] = cmdobj
                 
-            for category in cmds:
+            for category in sorted(cmds):
                 self.send_sbnc_reply(clientobj, '--', notice)
                 self.send_sbnc_reply(clientobj, category + ' commands', notice)
                 
-                for command in cmds[category]:
+                for command in sorted(cmds[category]):
                     cmdobj = cmds[category][command]
                     
                     self.send_sbnc_reply(clientobj, command +  ' - ' + cmdobj['description'], notice)
                     
             self.send_sbnc_reply(clientobj, 'End of HELP.', notice)
 
-sr = ServiceRegistry.get_instance()
-
-if sr.get(UIPlugin.package) == None:
-    sr.register(UIPlugin.package, UIPlugin(sr))
+ServiceRegistry.register(UIPlugin)
