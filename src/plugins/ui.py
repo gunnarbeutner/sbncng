@@ -87,6 +87,7 @@ class UIPlugin(Plugin):
         target = params[0]
         targetobj = clientobj.get_nick(target)
 
+        # TODO: use the nick from _identity
         if targetobj.nick.upper() != '-SBNC':
             return
 
@@ -101,7 +102,8 @@ class UIPlugin(Plugin):
         tokens = parse_irc_message(text, can_have_prefix=False)
                 
         if not self._handle_command(clientobj, tokens[1], tokens[2], False):
-            self.send_sbnc_reply(clientobj, 'Unknown command. Try /msg -sBNC help', notice=True)
+            # TODO: use the nick from _identity
+            self.send_sbnc_reply(clientobj, 'Unknown command. Try /msg -sBNC help', notice=False)
     
     def _client_sbnc_handler(self, evt, clientobj, nickobj, params):
         """
@@ -116,7 +118,8 @@ class UIPlugin(Plugin):
             return
         
         if not self._handle_command(clientobj, params[0], params[1:], True):
-            self.send_sbnc_reply(clientobj, 'Unknown command. Try /msg -sBNC help', notice=False)
+            # TODO: use the nick from _identity
+            self.send_sbnc_reply(clientobj, 'Unknown command. Try /sbnc help', notice=True)
     
     def _handle_command(self, clientobj, command, params, notice):
         """Handles the command."""

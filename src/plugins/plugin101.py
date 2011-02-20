@@ -23,8 +23,10 @@ proxy_svc = ServiceRegistry.get(Proxy.package)
 ui_svc = ServiceRegistry.get(UIPlugin.package)
 
 class TestPlugin(Plugin):
+    """Just a test plugin."""
+
     name = 'Test Plugin 101'
-    description = 'Just a test plugin.'
+    description = __doc__
     
     def __init__(self):
         user = proxy_svc.create_user('shroud')
