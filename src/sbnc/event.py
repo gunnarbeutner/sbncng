@@ -81,5 +81,7 @@ class Event(object):
         or lower are stopped, otherwise all remaining handlers are skipped.
         """
 
-        self._handlers_stopped_priority = priority
+        if not self._handlers_stopped or priority > self._handlers_stopped_priority: 
+            self._handlers_stopped_priority = priority
+
         self._handlers_stopped = True
