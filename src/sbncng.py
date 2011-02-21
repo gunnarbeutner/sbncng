@@ -24,6 +24,7 @@ proxy_svc = ServiceRegistry.get(Proxy.package)
 
 execfile('plugins/plugin101.py')
 execfile('plugins/ui.py')
+execfile('plugins/admincmd.py')
 
 listener = ClientListener( ('0.0.0.0', 9000), proxy_svc.client_factory )
 task = listener.start()
