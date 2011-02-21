@@ -32,7 +32,7 @@ class UIAccessCheck(object):
     def admin(clientobj):
         """Returns True for any user who is an admin."""
  
-        return ('admin' in clientobj.config and clientobj.config['admin'])
+        return ('admin' in clientobj.owner.config and clientobj.owner.config['admin'])
 
     admin = staticmethod(admin)
 
@@ -53,9 +53,7 @@ class UIPlugin(Plugin):
         self.usersettings = {}
         
         # register handlers for existing client connections
-        for user in proxy_svc.users:
-            userobj = proxy_svc.users[user]
-            
+        for _, userobj in proxy_svc.users:
             for clientobj in userobj.client_connections:
                 self._register_handlers(clientobj)
         
@@ -125,10 +123,12 @@ class UIPlugin(Plugin):
         """Handles the command."""
 
         if command in self.commands:
-            if not self.commands[command]['access_check'](clientobj):
+            cmdobj = self.commands[command]
+            
+            if not cmdobj['access_check'](clientobj):
                 return
 
-            self.commands[command]['callback'](clientobj, params, notice)
+            cmdobj['callback'](clientobj, params, notice)
             return True
 
     def register_command(self, name, callback, category, description,
@@ -180,9 +180,7 @@ class UIPlugin(Plugin):
             
             cmds = {}
             
-            for command in self.commands:
-                cmdobj = self.commands[command]
-                
+            for command, cmdobj in self.commands:
                 if not cmdobj['access_check'](clientobj):
                     continue
                 

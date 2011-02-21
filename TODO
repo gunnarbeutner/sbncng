@@ -1,5 +1,6 @@
 Connection queueing
 comments
+VERSION command: missing rpls
 MODE rpl parsing
 MODE command (cached)
 support return values for events

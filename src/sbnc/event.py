@@ -39,9 +39,9 @@ class Event(object):
     def remove_handler(self, handler):
         """Removes a handler from this event."""
         
-        for k in self._handlers:
-            if handler in self._handlers[k]:
-                self._handlers[k].remove(handler)
+        for priority in self._handlers:
+            if handler in self._handlers[priority]:
+                self._handlers[priority].remove(handler)
     
     def invoke(self, source, *args):
         """
@@ -54,10 +54,11 @@ class Event(object):
 
         self._handlers_stopped = False
 
-        for k in sorted(self._handlers.keys()):
-            for handler in self._handlers[k]:
+        for priority in sorted(self._handlers.keys()):
+            for handler in self._handlers[priority]:
                 if self._handlers_stopped and \
-                        (self._handlers_stopped_priority == None or k <= self._handlers_stopped_priority):
+                        (self._handlers_stopped_priority == None or \
+                        priority <= self._handlers_stopped_priority):
                     break
 
                 handler(self, source, *args)

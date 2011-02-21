@@ -191,7 +191,7 @@ class ProxyUser(object):
             clientobj.send_message(command, prefix=mapped_prefix, *params)
 
     def check_password(self, password):
-        return self.config['password'] == password
+        return 'password' in self.config and self.config['password'] == password
 
     # TODO: irc_registration event, needs to force-change client's nick if different
     # from the irc connection

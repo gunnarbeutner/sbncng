@@ -25,12 +25,14 @@ ui_svc = ServiceRegistry.get(UIPlugin.package)
 class TestPlugin(Plugin):
     """Just a test plugin."""
 
+    package = 'info.shroudbnc.plugins.plugin101'
     name = 'Test Plugin 101'
     description = __doc__
     
     def __init__(self):
         user = proxy_svc.create_user('shroud')
         user.config['password'] = 'keks'
+        user.config['admin'] = True
         
         ui_svc.register_command('moo', self._cmd_moo_handler, 'User', 'says moo', 'Syntax: moo')
 

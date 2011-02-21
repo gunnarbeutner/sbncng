@@ -845,9 +845,7 @@ class ClientConnection(_BaseConnection):
             attribs = []
             length = 0
 
-            for key in ircobj.isupport:
-                value = ircobj.isupport[key]
-
+            for key, value in ircobj.isupport:
                 if len(value) > 0:
                     attrib = '%s=%s' % (key, value)
                 else:
@@ -909,9 +907,7 @@ class ClientConnection(_BaseConnection):
             nicklist = []
             length = 0
             
-            for nickobj in channelobj.nicks:
-                membership = channelobj.nicks[nickobj]
-                
+            for nickobj, membership in channelobj.nicks:
                 length += len(nickobj.nick)
                 
                 prefixes = ''
@@ -1076,9 +1072,7 @@ class Nick(object):
             self.host = hostmask_dict['host']
 
     def _get_channels(self):
-        for channel in self._ircobj.channels:
-            channelobj = self._ircobj.channels[channel]
-            
+        for channel, channelobj in self._ircobj.channels:
             if self in channelobj.nicks:
                 yield channelobj
 
