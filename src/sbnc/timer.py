@@ -58,5 +58,8 @@ class Timer(object):
         Disables the timer.
         """
 
+        if self._greenlet == None:
+            return
+
         self._greenlet.kill(block=False)
         self._greenlet = None

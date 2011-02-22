@@ -53,7 +53,7 @@ class UIPlugin(Plugin):
         self.usersettings = {}
         
         # register handlers for existing client connections
-        for _, userobj in proxy_svc.users:
+        for _, userobj in proxy_svc.users.items():
             for clientobj in userobj.client_connections:
                 self._register_handlers(clientobj)
         
