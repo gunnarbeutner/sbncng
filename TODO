@@ -11,3 +11,4 @@ client.irc_NICK processes NICK change for registered users, should only do that 
 	connection
 QueuedLineWriter: support for priorities and delays ('flood protection')
 web interface
+resource limits
