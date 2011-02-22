@@ -3,6 +3,7 @@ comments
 VERSION command: missing rpls
 MODE rpl parsing
 MODE command (cached)
+parse rpl 306 (user is away) and add 'away' property in _BaseConnection
 support return values for events
 	* make sure that handlers call .stop_handlers() when they return something
 	* rework authentication_event to use that feature
@@ -12,3 +13,6 @@ client.irc_NICK processes NICK change for registered users, should only do that 
 QueuedLineWriter: support for priorities and delays ('flood protection')
 web interface
 resource limits
+bind address for irc connections
+poke slug about how to best implement config/log persistence
+support for high-level binds (i.e. one bind that works for all users)
