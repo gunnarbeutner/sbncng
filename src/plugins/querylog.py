@@ -26,21 +26,23 @@ ui_svc = ServiceRegistry.get(UIPlugin.package)
 class QueryLogPlugin(Plugin):
     """Implements query log functionality."""
     
-    package = "info.shroudbnc.plugins.querylog"
-    name = "querylog"
+    package = 'info.shroudbnc.plugins.querylog'
+    name = 'querylog'
     description = __doc__
 
     def __init__(self):
         # register handlers for existing irc connections
-        for _, userobj in proxy_svc.users.items():
+        for userobj in proxy_svc.users.values():
             for clientobj in userobj.client_connections:
                 self._register_handlers(clientobj)
         
         # make sure new irc connections also get the event handlers
         proxy_svc.irc_registration_event.add_handler(self._irc_registration_handler)
         
+        # register a client login handler so we can notify users about new messages
         proxy_svc.client_registration_event.add_handler(self._client_registration_event)
 
+        # and finally some handlers for /sbnc commands
         ui_svc.register_command('read', self._cmd_read_handler, 'User', 'plays your message log',
                                 'Syntax: read\nDisplays your private log.')
         ui_svc.register_command('erase', self._cmd_erase_handler, 'User', 'erases your message log',
@@ -109,7 +111,8 @@ class QueryLogPlugin(Plugin):
                                'remove this log.', notice)
     
     def erase_querylog(self, userobj):
-        del userobj.tags['querylog']
+        if 'querylog' in userobj.tags:
+            del userobj.tags['querylog']
     
     def _cmd_erase_handler(self, clientobj, params, notice):
         querylog = self.get_querylog(clientobj.owner)
