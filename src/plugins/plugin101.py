@@ -33,6 +33,7 @@ class TestPlugin(Plugin):
         user = proxy_svc.create_user('shroud')
         user.config['password'] = 'keks'
         user.config['admin'] = True
+        user.config['away'] = 'moo!'
         
         ui_svc.register_command('moo', self._cmd_moo_handler, 'User', 'says moo', 'Syntax: moo')
 
