@@ -26,6 +26,7 @@ execfile('plugins/plugin101.py')
 execfile('plugins/ui.py')
 execfile('plugins/awaycmd.py')
 execfile('plugins/admincmd.py')
+execfile('plugins/querylog.py')
 
 listener = ClientListener( ('0.0.0.0', 9000), proxy_svc.client_factory )
 task = listener.start()

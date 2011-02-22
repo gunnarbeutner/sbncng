@@ -36,6 +36,7 @@ class Proxy(Service):
         # high-level helper events, to make things easier for plugins
         self.new_client_event = Event()
         self.client_registration_event = Event()
+        self.irc_registration_event = Event()
 
     def _new_client_handler(self, evt, factory, clientobj):
         if not self.new_client_event.invoke(clientobj):
@@ -83,6 +84,7 @@ class ProxyUser(object):
         self.name = name
         
         self.config = {}
+        self.tags = {}
         
         self.irc_connection = None
         self.client_connections = []
@@ -94,6 +96,7 @@ class ProxyUser(object):
             self.irc_connection.close('Reconnecting.')
 
         self.irc_connection = self.proxy.irc_factory.create(address=('irc.quakenet.org', 6667))
+        self.irc_connection.owner = self
         self.irc_connection.reg_nickname = self.name
         self.irc_connection.reg_username = 'sbncng'
         self.irc_connection.reg_realname = 'sbncng client'
@@ -149,6 +152,9 @@ class ProxyUser(object):
             clientobj.process_line('NAMES %s' % (channel))
 
     def _irc_registration_handler(self, evt, ircobj):
+        if not self.proxy.irc_registration_event.invoke(ircobj):
+            return
+        
         for clientobj in self.client_connections:
             if clientobj.me.nick != ircobj.me.nick:
                 clientobj.send_message('NICK', self.irc_connection.me.nick, prefix=clientobj.me)
