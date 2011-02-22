@@ -18,7 +18,7 @@
 from datetime import datetime
 from sbnc.plugin import Plugin, ServiceRegistry
 from sbnc.proxy import Proxy
-from plugins.ui import UIPlugin, UIAccessCheck
+from plugins.ui import UIPlugin
 
 proxy_svc = ServiceRegistry.get(Proxy.package)
 ui_svc = ServiceRegistry.get(UIPlugin.package)
@@ -83,12 +83,20 @@ class QueryLogPlugin(Plugin):
         
         ircobj.owner.tags['querylog'].append(item)
     
+    def get_querylog(self, userobj):
+        if not 'querylog' in userobj.tags:
+            return []
+        else:
+            return userobj.tags['querylog']
+    
     def _cmd_read_handler(self, clientobj, params, notice):
-        if not 'querylog' in clientobj.owner.tags or len(clientobj.owner.tags['querylog']) == 0:
+        querylog = self.get_querylog(clientobj.owner)
+        
+        if len(querylog) == 0:
             ui_svc.send_sbnc_reply(clientobj, 'Your personal log is empty.', notice)
             return
         
-        for message in clientobj.owner.tags['querylog']:
+        for message in querylog:
             ui_svc.send_sbnc_reply(clientobj, '[%s] %s: %s' % (message['timestamp'],
                                               message['source'], message['text']), notice)
             
@@ -100,12 +108,17 @@ class QueryLogPlugin(Plugin):
         ui_svc.send_sbnc_reply(clientobj, 'End of LOG. Use \'%s\' to ' % (erasecmd) +
                                'remove this log.', notice)
     
+    def erase_querylog(self, userobj):
+        del userobj.tags['querylog']
+    
     def _cmd_erase_handler(self, clientobj, params, notice):
-        if not 'querylog' in clientobj.owner.tags or len(clientobj.owner.tags['querylog']) == 0:
+        querylog = self.get_querylog(clientobj.owner)
+        
+        if len(querylog) == 0:
             ui_svc.send_sbnc_reply(clientobj, 'Your personal log is empty.', notice)
             return
 
-        clientobj.owner.tags['querylog'] = []
+        self.erase_querylog(clientobj.owner)
         
         ui_svc.send_sbnc_reply(clientobj, 'Done.', notice)
     
