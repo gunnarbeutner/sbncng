@@ -180,7 +180,7 @@ class UIPlugin(Plugin):
             
             cmds = {}
             
-            for command, cmdobj in self.commands:
+            for command, cmdobj in self.commands.items():
                 if not cmdobj['access_check'](clientobj):
                     continue
                 
