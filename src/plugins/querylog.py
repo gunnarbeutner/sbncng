@@ -33,8 +33,8 @@ class QueryLogPlugin(Plugin):
     def __init__(self):
         # register handlers for existing irc connections
         for userobj in proxy_svc.users.values():
-            for clientobj in userobj.client_connections:
-                self._register_handlers(clientobj)
+            for ircobj in userobj.irc_connections:
+                self._register_handlers(ircobj)
         
         # make sure new irc connections also get the event handlers
         proxy_svc.irc_registration_event.add_handler(self._irc_registration_handler)
