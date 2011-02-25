@@ -18,6 +18,8 @@
 from sbnc.plugin import Plugin, ServiceRegistry
 from sbnc.proxy import Proxy
 from sbnc.utils import parse_irc_message
+from sbnc.event import Event
+from sbnc.irc import match_command
 
 class UIAccessCheck(object):
     """Helper functions for checking users' access."""
@@ -52,34 +54,25 @@ class UIPlugin(Plugin):
         self.settings = {}
         self.usersettings = {}
         
-        # register handlers for existing client connections
-        for _, userobj in proxy_svc.users.items():
-            for clientobj in userobj.client_connections:
-                self._register_handlers(clientobj)
-        
-        # make sure new clients also get the event handlers
-        proxy_svc.client_registration_event.add_handler(self._client_registration_handler)
+        proxy_svc.client_command_received_event.add_listener(self._client_privmsg_handler,
+                                                             Event.Handler,
+                                                             filter=match_command('PRIVMSG'))
+
+        proxy_svc.client_command_received_event.add_listener(self._client_sbnc_handler,
+                                                             Event.Handler,
+                                                             filter=match_command('SBNC'))
         
         self.register_command('help', self._cmd_help_handler, 'User',
                               'displays a list of commands or information about individual commands',
                               'Syntax: help [command]\nDisplays a list of commands or information about individual commands.')
         
-    def _client_registration_handler(self, evt, clientobj):
-        self._register_handlers(clientobj)
-        
-    def _register_handlers(self, clientobj):
-        """Registers handlers for /msg -sBNC <command> and /sbnc <command>"""
-        
-        clientobj.add_command_handler('PRIVMSG', self._client_privmsg_handler)
-        clientobj.add_command_handler('SBNC', self._client_sbnc_handler)
-        
-    def _client_privmsg_handler(self, evt, clientobj, nickobj, params):
+    def _client_privmsg_handler(self, evt, clientobj, command, nickobj, params):
         """
         PRIVMSG handler. Checks whether the target is '-sBNC' and passes the command
         to _handle_command.
         """
 
-        if len(params) < 1:
+        if not clientobj.registered or len(params) < 1:
             return
 
         target = params[0]
@@ -103,7 +96,7 @@ class UIPlugin(Plugin):
             # TODO: use the nick from _identity
             self.send_sbnc_reply(clientobj, 'Unknown command. Try /msg -sBNC help', notice=False)
     
-    def _client_sbnc_handler(self, evt, clientobj, nickobj, params):
+    def _client_sbnc_handler(self, evt, clientobj, command, nickobj, params):
         """
         SBNC handler. Checks whether we have enough parameters and passes the command
         to _handle_command.

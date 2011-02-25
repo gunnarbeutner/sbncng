@@ -17,6 +17,7 @@
 
 from sbnc.plugin import Plugin, ServiceRegistry
 from sbnc.proxy import Proxy
+from sbnc.event import Event
 
 proxy_svc = ServiceRegistry.get(Proxy.package)
 
@@ -28,12 +29,13 @@ class AwayCommandPlugin(Plugin):
     description = __doc__
 
     def __init__(self):
-        proxy_svc.client_registration_event.add_handler(self._client_registration_handler)
-
+        proxy_svc.client_registration_event.add_listener(self._client_registration_handler,
+                                                         Event.PostObserver)
+        # TODO: implement proxy_svc.client_connection_closed_event
         # TODO: implement setting
 
     def _client_registration_handler(self, evt, clientobj):
-        clientobj.connection_closed_event.add_handler(self._client_closed_handler)
+        clientobj.connection_closed_event.add_listener(self._client_closed_handler, Event.PostObserver)
         
         if clientobj.owner.irc_connection == None or not clientobj.owner.irc_connection.registered:
             return

@@ -17,6 +17,8 @@
 
 from datetime import datetime
 from sbnc.plugin import Plugin, ServiceRegistry
+from sbnc.event import Event
+from sbnc.irc import match_command
 from sbnc.proxy import Proxy
 from plugins.ui import UIPlugin
 
@@ -31,16 +33,13 @@ class QueryLogPlugin(Plugin):
     description = __doc__
 
     def __init__(self):
-        # register handlers for existing irc connections
-        for userobj in proxy_svc.users.values():
-            for ircobj in userobj.irc_connections:
-                self._register_handlers(ircobj)
-        
-        # make sure new irc connections also get the event handlers
-        proxy_svc.irc_registration_event.add_handler(self._irc_registration_handler)
-        
+        proxy_svc.irc_command_received_event.add_listener(self._irc_privmsg_handler,
+                                                          Event.PostObserver,
+                                                          filter=match_command('PRIVMSG'))
+
         # register a client login handler so we can notify users about new messages
-        proxy_svc.client_registration_event.add_handler(self._client_registration_event)
+        proxy_svc.client_registration_event.add_listener(self._client_registration_event,
+                                                         Event.PostObserver)
 
         # and finally some handlers for /sbnc commands
         ui_svc.register_command('read', self._cmd_read_handler, 'User', 'plays your message log',
@@ -52,7 +51,7 @@ class QueryLogPlugin(Plugin):
         self._register_handlers(ircobj)
     
     def _client_registration_event(self, evt, clientobj):
-        if not 'querylog' in clientobj.owner.tags or len(clientobj.owner.tags['querylog']) == 0:
+        if len(self.get_querylog(clientobj.owner)) == 0:
             return
         
         ui_svc.send_sbnc_reply(clientobj, 'You have new messages. Use \'/msg -sBNC read\' ' +
@@ -63,6 +62,9 @@ class QueryLogPlugin(Plugin):
     
     def _irc_privmsg_handler(self, evt, ircobj, nickobj, params):
         if len(params) < 2:
+            return
+        
+        if evt.handled:
             return
         
         if ircobj.owner == None or len(ircobj.owner.client_connections) > 0:

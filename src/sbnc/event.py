@@ -15,74 +15,120 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
-from collections import defaultdict
+def match_source(value):
+    def match_source_helper(*args, **kwargs):
+        return args[1] == value
+    
+    return lambda *args, **kwargs: match_source_helper(*args, **kwargs)
+
+def match_param(key, value):
+    def match_param_helper(*args, **kwargs):
+        return kwargs[key] == value
+    
+    return lambda *args, **kwargs: match_param_helper(*args, **kwargs)
+
+def lambda_and(expr1, expr2):
+    def lambda_and_helper(*args, **kwargs):
+        return expr1(*args, **kwargs) and expr2(*args, **kwargs)
+    
+    return lambda *args, **kwargs:  lambda_and_helper(*args, **kwargs)
 
 class Event(object):
     """Multicast delegate used to handle events."""
 
-    BUILTIN_PRIORITY = 0 # pseudo priority, used to specify the code that called this event
-    LOW_PRIORITY = 1
-    NORMAL_PRIORITY = 2
-    HIGH_PRIORITY = 3
+    PreObserver = 0
+    Handler = 1
+    PostObserver = 2
+
+    def __init__(self, filter=None):
+        self.handlers = []
+
+        self.filter = filter
+        self.parent = None
     
-    def __init__(self):
-        self._handlers = defaultdict(set)
+    def bind(self, other, filter=filter):
+        """Binds this to another event using the optionally specified filter."""
+        assert len(self.handlers) == 0
+        
+        self.filter = filter
+        self.parent = other
+        
+    def unbind(self, event):
+        """Unbinds this event from another event."""
+        
+        # TODO: implement
+        assert False
     
-    def add_handler(self, handler, priority=NORMAL_PRIORITY):
+    def add_listener(self, receiver, type, filter=None, last=False):
         """Registers an event handler."""
         
-        if not priority in [Event.LOW_PRIORITY, Event.NORMAL_PRIORITY, Event.HIGH_PRIORITY]:
-            raise ValueError("Invalid priority specified.")
+        if self.filter != None:
+            if filter == None:
+                filter = self.filter
+            else:
+                filter = lambda_and(self.filter, filter)
+
+        handler = (receiver, type, filter)
         
-        self._handlers[priority].add(handler)
-    
-    def remove_handler(self, handler):
+        if last:
+            self.handlers.append(handler)
+        else:
+            self.handlers.insert(0, handler)
+        
+        if self.parent != None:
+            self.parent.add_listener(receiver, type, filter=filter, last=last)
+
+# TODO: implement  
+    def remove_listener(self, receiver, type, filter=any):
         """Removes a handler from this event."""
-        
-        for priority in self._handlers:
-            if handler in self._handlers[priority]:
-                self._handlers[priority].remove(handler)
+        assert False
+#        
+#        handler = (receiver, filter)
+#        
+#        if type == Event.PreObserver:
+#            self._pre_observers.remove(handler)
+#        elif type == Event.PostObserver:
+#            self._pre_observers.remove(handler)
+#        else:
+#            if not priority in [Event.LOW_PRIORITY, Event.NORMAL_PRIORITY, Event.HIGH_PRIORITY]:
+#                raise ValueError("Invalid priority specified.")
+#
+#            self._handlers[priority].remove(handler)
     
-    def invoke(self, source, *args):
+    def invoke(self, sender, **kwargs):
         """
-        Invokes the event _handlers. Returns True if all event _handlers
-        were invoked, or False if one of them returned Event.HANDLED.
+        Invokes the event handlers. Returns True if a handler called stop_handlers().
         """
 
         # TODO: figure out whether we want to catch exceptions here
         # and log them in a user-friendly fashion
 
-        self._handlers_stopped = False
+        self.handled = False
+        handled = False
 
-        for priority in sorted(self._handlers.keys()):
-            for handler in self._handlers[priority]:
-                if self._handlers_stopped and \
-                        (self._handlers_stopped_priority == None or \
-                        priority <= self._handlers_stopped_priority):
+        for type in [Event.PreObserver, Event.Handler, Event.PostObserver]:
+            for handler in self.handlers:
+                if handler[1] != type:
+                    continue
+
+                if type != Event.Handler:
+                    self.handled = False
+
+                if handler[2] != None and \
+                        not handler[2](self, sender, **kwargs):
+                    continue
+
+                handler[0](self, sender, **kwargs)
+
+                if type == Event.Handler and self.handled:
+                    handled = True
                     break
+                
+        return handled
 
-                handler(self, source, *args)
-
-        return not self._handlers_stopped
-    
-    def get_handlers_count(self):
+    def stop_handlers(self):
         """
-        Returns the number of handlers that are currently registered
-        for this event.
-        """
-        
-        return len(self._handlers)
-    
-    handlers_count = property(get_handlers_count)
-    
-    def stop_handlers(self, priority=None):
-        """
-        Stops event handlers from being called for the current invocation. If
-        a priority is specified only those handlers with a priority equal to
-        or lower are stopped, otherwise all remaining handlers are skipped.
+        Stops event handlers from being called for the current invocation.
         """
 
-        if not self._handlers_stopped or priority > self._handlers_stopped_priority: 
-            self._handlers_stopped_priority = priority
-
-        self._handlers_stopped = True
+        self.handled = True

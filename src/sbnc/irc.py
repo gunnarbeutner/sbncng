@@ -18,13 +18,12 @@
 import sys
 import time
 from copy import copy
-from collections import defaultdict
 from datetime import datetime
 from weakref import WeakValueDictionary
 import gevent
 from gevent import socket, dns, queue
 from sbnc import utils
-from sbnc.event import Event
+from sbnc.event import Event, match_source, match_param
 from sbnc.timer import Timer
 
 class QueuedLineWriter(object):
@@ -62,10 +61,17 @@ class QueuedLineWriter(object):
     def close(self):
         self._queue.put(False)
 
+def match_command(value):
+    return match_param('command', value)
+
 class _BaseConnection(object):
     MAX_LINELEN = 512
 
-    def __init__(self, address, socket=None):
+    connection_closed_event = Event()
+    registration_event = Event()
+    command_received_event = Event()
+
+    def __init__(self, address, socket=None, factory=None):
         """
         Base class for IRC connections.
 
@@ -73,16 +79,24 @@ class _BaseConnection(object):
                  of the connection
         socket: An existing socket for the connection, or None
                 if a new connection is to be established.
+        factory: The factory that was used to create this object.
         """
 
         self.socket_address = address
         self.socket = socket
+        self.factory = factory
 
-        self.connection_closed_event = Event()
-        self.registration_event = Event()
-        self.command_received_event = Event()
-
-        self.command_events = defaultdict(Event)
+        evt = Event()
+        evt.bind(self.__class__.connection_closed_event, filter=match_source(self))
+        self.connection_closed_event = evt
+        
+        evt = Event()
+        evt.bind(self.__class__.registration_event, filter=match_source(self))
+        self.registration_event = evt
+        
+        evt = Event()
+        evt.bind(self.__class__.command_received_event, filter=match_source(self))
+        self.command_received_event = evt
 
         self.me = Nick(self)
         self.server = Nick(self)
@@ -123,17 +137,15 @@ class _BaseConnection(object):
             connection = self.socket.makefile('w+', 1)
 
             while True:
-                try:
-                    line = connection.readline()
+                line = connection.readline()
 
-                    if not line:
-                        break
+                if not line:
+                    break
 
-                    self.process_line(line)
-                except:
-                    exc = sys.exc_info()[1]
-                    if not self.handle_exception(exc):
-                        raise
+                self.process_line(line)
+        except Exception:
+            exc_info = sys.exc_info()
+            sys.excepthook(*exc_info)
         finally:
             try:
                 # Not calling possibly derived methods
@@ -142,7 +154,7 @@ class _BaseConnection(object):
             except:
                 pass
 
-            self.connection_closed_event.invoke(self)
+            self.__class__.connection_closed_event.invoke(self)
 
     def close(self, message=None):        
         if self._registration_timeout != None:
@@ -184,18 +196,10 @@ class _BaseConnection(object):
 
         command = command.upper()
 
-        have_cmd_handler = command in self.command_events and \
-            self.command_events[command].handlers_count > 0
-
-        if have_cmd_handler:
-            if not self.command_events[command].invoke(self, nickobj, params):
-                return
-
-        if not self.command_received_event.invoke(self, command, nickobj, params):
+        if self.__class__.command_received_event.invoke(self, command=command, nickobj=nickobj, params=params):
             return
 
-        if not have_cmd_handler:
-            self.handle_unknown_command(nickobj, command, params)
+        self.handle_unknown_command(nickobj, command, params)
 
     def send_line(self, line):
         self._line_writer.write_line(line)
@@ -216,7 +220,7 @@ class _BaseConnection(object):
 
         self.registered = True
 
-        self.registration_event.invoke(self)
+        self.__class__.registration_event.invoke(self)
 
     def _registration_timeout_timer(self):
         self.handle_registration_timeout()
@@ -224,29 +228,47 @@ class _BaseConnection(object):
     def handle_registration_timeout(self):
         self.close('Registration timeout detected.')
 
-    def add_command_handler(self, command, handler, priority=Event.NORMAL_PRIORITY):
-        self.command_events[command].add_handler(handler, priority)
+    def add_command_handler(self, command, handler):
+        self.command_received_event.add_listener(handler, Event.Handler,
+                                                 filter=match_command(command))
 
     def remove_command_handler(self, command, handler):
-        self.command_events[command].remove_handler(handler)
+        #self.command_events[command].remove_handler(handler)
+        #TODO: implement
+        assert False
     
 class ConnectionFactory(object):
+    new_connection_event = Event()
+
+    def match_factory(value):
+        def match_factory_helper(*args, **kwargs):
+            return args[1].factory == value
+        
+        return lambda *args, **kwargs: match_factory_helper(*args, **kwargs)
+
+    match_factory = staticmethod(match_factory)
+
     def __init__(self, cls):
-        self.new_connection_event = Event()
+        evt = Event()
+        evt.bind(ConnectionFactory.new_connection_event, filter=match_source(self))
+        self.new_connection_event = evt
+
         self._cls = cls
 
     def create(self, **kwargs):
-        ircobj = self._cls(**kwargs)
+        ircobj = self._cls(factory=self, **kwargs)
 
-        if not self.new_connection_event.invoke(self, ircobj):
-            ircobj.close()
-            return None
+        self.__class__.new_connection_event.invoke(sender=self, connobj=ircobj)
 
         return ircobj
 
 class IRCConnection(_BaseConnection):
-    def __init__(self, address, socket=None):
-        _BaseConnection.__init__(self, address, socket)
+    connection_closed_event = Event()
+    registration_event = Event()
+    command_received_event = Event()
+
+    def __init__(self, address, socket=None, factory=None):
+        _BaseConnection.__init__(self, address=address, socket=socket, factory=factory)
         
         self.reg_nickname = None
         self.reg_username = None
@@ -284,30 +306,30 @@ class IRCConnection(_BaseConnection):
 
     class CommandHandlers(object):
         def register_handlers(ircobj):
-            ircobj.add_command_handler('PING', IRCConnection.CommandHandlers.irc_PING, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('ERROR', IRCConnection.CommandHandlers.irc_ERROR, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('001', IRCConnection.CommandHandlers.irc_001, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('005', IRCConnection.CommandHandlers.irc_005, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('375', IRCConnection.CommandHandlers.irc_375, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('372', IRCConnection.CommandHandlers.irc_372, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('NICK', IRCConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('JOIN', IRCConnection.CommandHandlers.irc_JOIN, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('PART', IRCConnection.CommandHandlers.irc_PART, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('KICK', IRCConnection.CommandHandlers.irc_KICK, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('QUIT', IRCConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('353', IRCConnection.CommandHandlers.irc_353, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('366', IRCConnection.CommandHandlers.irc_366, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('433', IRCConnection.CommandHandlers.irc_433, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('331', IRCConnection.CommandHandlers.irc_331, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('332', IRCConnection.CommandHandlers.irc_332, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('333', IRCConnection.CommandHandlers.irc_333, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('TOPIC', IRCConnection.CommandHandlers.irc_TOPIC, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('329', IRCConnection.CommandHandlers.irc_329, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('PING', IRCConnection.CommandHandlers.irc_PING)
+            ircobj.add_command_handler('ERROR', IRCConnection.CommandHandlers.irc_ERROR)
+            ircobj.add_command_handler('001', IRCConnection.CommandHandlers.irc_001)
+            ircobj.add_command_handler('005', IRCConnection.CommandHandlers.irc_005)
+            ircobj.add_command_handler('375', IRCConnection.CommandHandlers.irc_375)
+            ircobj.add_command_handler('372', IRCConnection.CommandHandlers.irc_372)
+            ircobj.add_command_handler('NICK', IRCConnection.CommandHandlers.irc_NICK)
+            ircobj.add_command_handler('JOIN', IRCConnection.CommandHandlers.irc_JOIN)
+            ircobj.add_command_handler('PART', IRCConnection.CommandHandlers.irc_PART)
+            ircobj.add_command_handler('KICK', IRCConnection.CommandHandlers.irc_KICK)
+            ircobj.add_command_handler('QUIT', IRCConnection.CommandHandlers.irc_QUIT)
+            ircobj.add_command_handler('353', IRCConnection.CommandHandlers.irc_353)
+            ircobj.add_command_handler('366', IRCConnection.CommandHandlers.irc_366)
+            ircobj.add_command_handler('433', IRCConnection.CommandHandlers.irc_433)
+            ircobj.add_command_handler('331', IRCConnection.CommandHandlers.irc_331)
+            ircobj.add_command_handler('332', IRCConnection.CommandHandlers.irc_332)
+            ircobj.add_command_handler('333', IRCConnection.CommandHandlers.irc_333)
+            ircobj.add_command_handler('TOPIC', IRCConnection.CommandHandlers.irc_TOPIC)
+            ircobj.add_command_handler('329', IRCConnection.CommandHandlers.irc_329)
 
         register_handlers = staticmethod(register_handlers)
 
         # PING :wineasy1.se.quakenet.org
-        def irc_PING(evt, ircobj, nickobj, params):
+        def irc_PING(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 return
 
@@ -318,7 +340,7 @@ class IRCConnection(_BaseConnection):
         irc_PING = staticmethod(irc_PING)
 
         # ERROR :Registration timeout.
-        def irc_ERROR(evt, ircobj, nickobj, params):
+        def irc_ERROR(evt, ircobj, command, nickobj, params):
             ircobj.close()
             
             evt.stop_handlers()
@@ -326,7 +348,7 @@ class IRCConnection(_BaseConnection):
         irc_ERROR = staticmethod(irc_ERROR)
 
         # :wineasy1.se.quakenet.org 001 shroud_ :Welcome to the QuakeNet IRC Network, shroud_
-        def irc_001(evt, ircobj, nickobj, params):
+        def irc_001(evt, ircobj, command, nickobj, params):
             ircobj.me.nick = ircobj.reg_nickname
 
             ircobj.server = nickobj
@@ -337,7 +359,7 @@ class IRCConnection(_BaseConnection):
 
         # :wineasy1.se.quakenet.org 005 shroud_ WHOX WALLCHOPS WALLVOICES USERIP CPRIVMSG CNOTICE \
         # SILENCE=15 MODES=6 MAXCHANNELS=20 MAXBANS=45 NICKLEN=15 :are supported by this server
-        def irc_005(evt, ircobj, nickobj, params):
+        def irc_005(evt, ircobj, command, nickobj, params):
             if len(params) < 3:
                 return
 
@@ -359,13 +381,13 @@ class IRCConnection(_BaseConnection):
         irc_005 = staticmethod(irc_005)
 
         # :wineasy1.se.quakenet.org 375 shroud_ :- wineasy1.se.quakenet.org Message of the Day - 
-        def irc_375(evt, ircobj, nickobj, params):
+        def irc_375(evt, ircobj, command, nickobj, params):
             ircobj.motd = []
 
         irc_375 = staticmethod(irc_375)
 
         # :wineasy1.se.quakenet.org 372 shroud_ :- ** [ wineasy.se.quakenet.org ] **************************************** 
-        def irc_372(evt, ircobj, nickobj, params):
+        def irc_372(evt, ircobj, command, nickobj, params):
             if len(params) < 2:
                 return
 
@@ -379,7 +401,7 @@ class IRCConnection(_BaseConnection):
         irc_372 = staticmethod(irc_372)
 
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net NICK :shroud__
-        def irc_NICK(evt, ircobj, nickobj, params):
+        def irc_NICK(evt, ircobj, command, nickobj, params):
             if len(params) < 1 or nickobj == None:
                 return
 
@@ -399,7 +421,7 @@ class IRCConnection(_BaseConnection):
         irc_NICK = staticmethod(irc_NICK)
 
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net JOIN #sbncng
-        def irc_JOIN(evt, ircobj, nickobj, params):
+        def irc_JOIN(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 return
 
@@ -419,7 +441,7 @@ class IRCConnection(_BaseConnection):
         irc_JOIN = staticmethod(irc_JOIN)
 
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net PART #sbncng
-        def irc_PART(evt, ircobj, nickobj, params):
+        def irc_PART(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 return
         
@@ -441,7 +463,7 @@ class IRCConnection(_BaseConnection):
         irc_PART = staticmethod(irc_PART)
         
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net KICK #sbncng sbncng :test
-        def irc_KICK(evt, ircobj, nickobj, params):
+        def irc_KICK(evt, ircobj, command, nickobj, params):
             if len(params) < 2:
                 return
             
@@ -466,7 +488,7 @@ class IRCConnection(_BaseConnection):
         irc_KICK = staticmethod(irc_KICK)
 
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net QUIT :test
-        def irc_QUIT(evt, ircobj, nickobj, params):
+        def irc_QUIT(evt, ircobj, command, nickobj, params):
             channels = list(nickobj.channels)
             
             for channel in channels:
@@ -475,7 +497,7 @@ class IRCConnection(_BaseConnection):
         irc_QUIT = staticmethod(irc_QUIT)
         
         # :server.shroudbnc.info 353 sbncng = #sbncng :sbncng @shroud
-        def irc_353(evt, ircobj, nickobj, params):
+        def irc_353(evt, ircobj, command, nickobj, params):
             if len(params) < 4:
                 return
             
@@ -515,7 +537,7 @@ class IRCConnection(_BaseConnection):
         irc_353 = staticmethod(irc_353)
         
         # :server.shroudbnc.info 366 sbncng #sbncng :End of /NAMES list.
-        def irc_366(evt, ircobj, nickobj, params):
+        def irc_366(evt, ircobj, command, nickobj, params):
             if len(params) < 2:
                 return
             
@@ -531,7 +553,7 @@ class IRCConnection(_BaseConnection):
         irc_366 = staticmethod(irc_366)
 
         # :underworld2.no.quakenet.org 433 * shroud :Nickname is already in use.
-        def irc_433(evt, ircobj, nickobj, params):
+        def irc_433(evt, ircobj, command, nickobj, params):
             if len(params) < 2 or ircobj.registered:
                 return
             
@@ -544,7 +566,7 @@ class IRCConnection(_BaseConnection):
         irc_433 = staticmethod(irc_433)
         
         # :underworld2.no.quakenet.org 331 #channel :No topic is set
-        def irc_331(evt, ircobj, nickobj, params):
+        def irc_331(evt, ircobj, command, nickobj, params):
             if len(params) < 3:
                 return
             
@@ -563,7 +585,7 @@ class IRCConnection(_BaseConnection):
         irc_331 = staticmethod(irc_331)
 
         # :underworld2.no.quakenet.org 332 #channel :Some topic.
-        def irc_332(evt, ircobj, nickobj, params):
+        def irc_332(evt, ircobj, command, nickobj, params):
             if len(params) < 3:
                 return
             
@@ -582,7 +604,7 @@ class IRCConnection(_BaseConnection):
         irc_332 = staticmethod(irc_332)
 
         # :underworld2.no.quakenet.org 333 #channel Nick 1297723476
-        def irc_333(evt, ircobj, nickobj, params):
+        def irc_333(evt, ircobj, command, nickobj, params):
             if len(params) < 4:
                 return
             
@@ -604,7 +626,7 @@ class IRCConnection(_BaseConnection):
         irc_333 = staticmethod(irc_333)
         
         # :shroud!shroud@help TOPIC #channel :new topic
-        def irc_TOPIC(evt, ircobj, nickobj, params):
+        def irc_TOPIC(evt, ircobj, command, nickobj, params):
             if len(params) < 2:
                 return
             
@@ -624,7 +646,7 @@ class IRCConnection(_BaseConnection):
         irc_TOPIC = staticmethod(irc_TOPIC)
         
         # :underworld2.no.quakenet.org 329 shroud #sbfl 1233690341
-        def irc_329(evt, ircobj, nickobj, params):
+        def irc_329(evt, ircobj, command, nickobj, params):
             if len(params) < 3:
                 return
             
@@ -664,13 +686,20 @@ class ClientConnection(_BaseConnection):
         'ERR_ALREADYREGISTRED': (462, 'Unauthorized command (already registered)')
     }
 
-    def __init__(self, address, socket):
-        _BaseConnection.__init__(self, address, socket)
+    connection_closed_event = Event()
+    registration_event = Event()
+    command_received_event = Event()
+    authentication_event = Event()
+
+    def __init__(self, address, socket, factory=None):
+        _BaseConnection.__init__(self, address=address, socket=socket, factory=factory)
 
         self.me.host = self.socket_address[0]
         self.server.nick = ClientConnection.DEFAULT_SERVERNAME
         
-        self.authentication_event = Event()
+        evt = Event()
+        evt.bind(ClientConnection.authentication_event, filter=match_source(self))
+        self.authentication_event = evt
         
         self._password = None
 
@@ -733,12 +762,11 @@ class ClientConnection(_BaseConnection):
                              'use /QUOTE PASS <password> to send one now.')
             return
 
-        if self.authentication_event.handlers_count > 0:
-            self.authentication_event.invoke(self, self.me.user, self._password)
-            
-            if not self.owner:
-                self.close('Authentication failed: Invalid user credentials.')
-                return
+        self.__class__.authentication_event.invoke(self, username=self.me.user, password=self._password)
+        
+        if not self.owner:
+            self.close('Authentication failed: Invalid user credentials.')
+            return
 
         _BaseConnection.register_user(self)
 
@@ -756,25 +784,25 @@ class ClientConnection(_BaseConnection):
 
     class CommandHandlers(object):
         def register_handlers(ircobj):
-            ircobj.add_command_handler('USER', ClientConnection.CommandHandlers.irc_USER, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('NICK', ClientConnection.CommandHandlers.irc_NICK, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('PASS', ClientConnection.CommandHandlers.irc_PASS, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('QUIT', ClientConnection.CommandHandlers.irc_QUIT, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('USER', ClientConnection.CommandHandlers.irc_USER)
+            ircobj.add_command_handler('NICK', ClientConnection.CommandHandlers.irc_NICK)
+            ircobj.add_command_handler('PASS', ClientConnection.CommandHandlers.irc_PASS)
+            ircobj.add_command_handler('QUIT', ClientConnection.CommandHandlers.irc_QUIT)
             
-            ircobj.registration_event.add_handler(ClientConnection.CommandHandlers._irc_registration_handler, Event.LOW_PRIORITY)
+            ircobj.registration_event.add_listener(ClientConnection.CommandHandlers._irc_registration_handler, Event.PreObserver)
             
         register_handlers = staticmethod(register_handlers)
 
         def _irc_registration_handler(evt, ircobj):
-            ircobj.add_command_handler('VERSION', ClientConnection.CommandHandlers.irc_VERSION, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('MOTD', ClientConnection.CommandHandlers.irc_MOTD, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('NAMES', ClientConnection.CommandHandlers.irc_NAMES, Event.LOW_PRIORITY)
-            ircobj.add_command_handler('TOPIC', ClientConnection.CommandHandlers.irc_TOPIC, Event.LOW_PRIORITY)
+            ircobj.add_command_handler('VERSION', ClientConnection.CommandHandlers.irc_VERSION)
+            ircobj.add_command_handler('MOTD', ClientConnection.CommandHandlers.irc_MOTD)
+            ircobj.add_command_handler('NAMES', ClientConnection.CommandHandlers.irc_NAMES)
+            ircobj.add_command_handler('TOPIC', ClientConnection.CommandHandlers.irc_TOPIC)
 
         _irc_registration_handler = staticmethod(_irc_registration_handler)
 
         # USER shroud * 0 :Gunnar Beutner
-        def irc_USER(evt, ircobj, nickobj, params):
+        def irc_USER(evt, ircobj, command, nickobj, params):
             if len(params) < 4:
                 ircobj.send_reply('ERR_NEEDMOREPARAMS', 'USER')
                 return
@@ -791,7 +819,7 @@ class ClientConnection(_BaseConnection):
         irc_USER = staticmethod(irc_USER)
 
         # NICK shroud_
-        def irc_NICK(evt, ircobj, nickobj, params):
+        def irc_NICK(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 ircobj.send_reply('ERR_NONICKNAMEGIVEN', 'NICK')
                 return
@@ -815,7 +843,7 @@ class ClientConnection(_BaseConnection):
         irc_NICK = staticmethod(irc_NICK)
 
         # PASS topsecret
-        def irc_PASS(evt, ircobj, nickobj, params):
+        def irc_PASS(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 ircobj.send_reply('ERR_NEEDMOREPARAMS', 'PASS')
                 return
@@ -830,13 +858,13 @@ class ClientConnection(_BaseConnection):
 
         irc_PASS = staticmethod(irc_PASS)
 
-        def irc_QUIT(evt, ircobj, nickobj, params):
+        def irc_QUIT(evt, ircobj, command, nickobj, params):
             ircobj.close('Goodbye.')
 
         irc_QUIT = staticmethod(irc_QUIT)
 
         # VERSION
-        def irc_VERSION(evt, ircobj, nickobj, params):
+        def irc_VERSION(evt, ircobj, command, nickobj, params):
             if len(params) > 0:
                 return
             
@@ -867,7 +895,7 @@ class ClientConnection(_BaseConnection):
         irc_VERSION = staticmethod(irc_VERSION)
 
         # MOTD
-        def irc_MOTD(evt, ircobj, nickobj, params):
+        def irc_MOTD(evt, ircobj, command, nickobj, params):
             if len(ircobj.motd) > 0:
                 ircobj.send_reply('RPL_MOTDSTART', format_args=(ircobj.server))
 
@@ -883,7 +911,7 @@ class ClientConnection(_BaseConnection):
         irc_MOTD = staticmethod(irc_MOTD)
         
         # NAMES #channel
-        def irc_NAMES(evt, ircobj, nickobj, params):
+        def irc_NAMES(evt, ircobj, command, nickobj, params):
             if len(params) != 1 or ',' in params[0]:
                 return
             
@@ -935,7 +963,7 @@ class ClientConnection(_BaseConnection):
         irc_NAMES = staticmethod(irc_NAMES)
 
         # TOPIC #channel
-        def irc_TOPIC(evt, ircobj, nickobj, params):
+        def irc_TOPIC(evt, ircobj, command, nickobj, params):
             if len(params) != 1:
                 return
             
