@@ -18,3 +18,5 @@ poke slug about how to best implement config/log persistence
 support for high-level binds (i.e. one bind that works for all users)
 check whether the builtin irc/client event handlers' priorities make sense
 case-insensitive comparison for irc nicks
+weakrefs for event handlers (use python-louie as a reference)
+change events to use the new registration/invocation style
