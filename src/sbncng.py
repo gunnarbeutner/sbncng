@@ -16,6 +16,14 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
+try:
+    import pydevd
+
+    # Try to enable post-mortem debugging for exceptions
+    pydevd.set_pm_excepthook()
+except ImportError:
+    pass
+
 from sbnc.irc import ClientListener
 from sbnc.proxy import Proxy
 from sbnc.plugin import ServiceRegistry
