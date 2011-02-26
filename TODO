@@ -20,3 +20,5 @@ check whether the builtin irc/client event handlers' priorities make sense
 case-insensitive comparison for irc nicks
 weakrefs for event handlers (use python-louie as a reference)
 change events to use the new registration/invocation style
+event filters: implement return value which signals that the event should be removed
+use a return value instead of stop_handlers()
