@@ -44,10 +44,10 @@ class Event(object):
     Handled = 2
     RemoveHandler = 4
 
-    def __init__(self, filter=None):
+    def __init__(self):
         self.handlers = []
 
-        self.filter = filter
+        self.filter = None
         self.parent = None
     
     def bind(self, other, filter=filter):
@@ -59,9 +59,7 @@ class Event(object):
         
     def unbind(self, event):
         """Unbinds this event from another event."""
-        
-        # TODO: implement
-        assert False
+        raise NotImplementedError()
     
     def add_listener(self, receiver, type, filter=None, last=False):
         """Registers an event handler."""
@@ -85,27 +83,12 @@ class Event(object):
 # TODO: implement  
     def remove_listener(self, receiver, type, filter=any):
         """Removes a handler from this event."""
-        assert False
-#        
-#        handler = (receiver, filter)
-#        
-#        if type == Event.PreObserver:
-#            self._pre_observers.remove(handler)
-#        elif type == Event.PostObserver:
-#            self._pre_observers.remove(handler)
-#        else:
-#            if not priority in [Event.LOW_PRIORITY, Event.NORMAL_PRIORITY, Event.HIGH_PRIORITY]:
-#                raise ValueError("Invalid priority specified.")
-#
-#            self._handlers[priority].remove(handler)
+        raise NotImplementedError()
     
     def invoke(self, sender, **kwargs):
         """
         Invokes the event handlers. Returns True if a handler called stop_handlers().
         """
-
-        # TODO: figure out whether we want to catch exceptions here
-        # and log them in a user-friendly fashion
 
         handled = False
 
