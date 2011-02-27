@@ -29,7 +29,7 @@ from sbnc.timer import Timer
 class QueuedLineWriter(object):
     def __init__(self, sock):
         self._socket = sock
-        self._connection = sock.makefile('w+', 1)
+        self._connection = sock.makefile('w+b', 1)
         self._queue = queue.Queue()
     
     def start(self):
@@ -43,7 +43,7 @@ class QueuedLineWriter(object):
                 break
             
             try:
-                self._connection.write(line + '\n')
+                self._connection.write(line + '\r\n')
             except:
                 pass
     
@@ -134,7 +134,7 @@ class _BaseConnection(object):
         try:
             self.handle_connection_made()
 
-            connection = self.socket.makefile('w+', 1)
+            connection = self.socket.makefile('w+b', 1)
 
             while True:
                 line = connection.readline()
