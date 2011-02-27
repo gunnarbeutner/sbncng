@@ -34,6 +34,7 @@ class TestPlugin(Plugin):
         user.config['password'] = 'keks'
         user.config['admin'] = True
         user.config['away'] = 'moo!'
+        user.config['server'] = ('irc.quakenet.org', 6667)
         
         ui_svc.register_command('moo', self._cmd_moo_handler, 'User', 'says moo', 'Syntax: moo')
 

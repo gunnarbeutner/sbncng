@@ -30,6 +30,8 @@ from sbnc.plugin import ServiceRegistry
 
 proxy_svc = ServiceRegistry.get(Proxy.package)
 
+print('sbncng (' + proxy_svc.version + ') - an object-oriented IRC bouncer')
+
 execfile('plugins/plugin101.py')
 execfile('plugins/ui.py')
 execfile('plugins/awaycmd.py')

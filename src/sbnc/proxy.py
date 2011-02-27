@@ -15,14 +15,17 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
-import gevent
+from datetime import datetime, timedelta
 from sbnc import irc
 from sbnc.event import Event
 from sbnc.plugin import Service, ServiceRegistry
 from sbnc.irc import IRCConnection, ClientConnection, ConnectionFactory
+from sbnc.timer import Timer
 
 class Proxy(Service):
     package = 'info.shroudbnc.services.proxy'
+    
+    version = 'wip-1'
     
     def __init__(self):
         self.irc_factory = ConnectionFactory(IRCConnection)
@@ -62,6 +65,9 @@ class Proxy(Service):
         
         self.users = {}
         self.config = {}
+        
+        self._last_reconnect = None
+        Timer(10, self._reconnect_timer).start()
         
         # high-level helper events, to make things easier for plugins
         self.new_client_event = Event()
@@ -115,6 +121,24 @@ class Proxy(Service):
         # TODO: event
 
         del self.users[name]
+        
+    def _reconnect_timer(self):
+        if self._last_reconnect != None and \
+                self._last_reconnect > datetime.now() - timedelta(seconds=60):
+            return True
+        
+        for userobj in self.users.values():
+            if userobj.irc_connection != None or ('last_reconnect' in userobj.tags and \
+                    userobj.tags['last_reconnect'] > datetime.now() - timedelta(seconds=120)):
+                continue
+
+            self._last_reconnect = datetime.now()
+            userobj.tags['last_reconnect'] = self._last_reconnect
+            userobj.reconnect_to_irc()
+            
+            break
+        
+        return True
 
 class ProxyUser(object):
     def __init__(self, proxy, name):
@@ -124,20 +148,26 @@ class ProxyUser(object):
         self.config = {}
         self.tags = {}
         
+        self.config['nick'] = name
+        self.config['realname'] = 'sbncng User'
+        self.config['server'] = None
+        
         self.irc_connection = None
         self.client_connections = []
         
-        self.reconnect_to_irc()
-
     def reconnect_to_irc(self):
         if self.irc_connection != None:
             self.irc_connection.close('Reconnecting.')
 
-        self.irc_connection = self.proxy.irc_factory.create(address=('irc.quakenet.org', 6667))
+        if not 'server' in self.config or self.config['server'] == None:
+            # TODO: trigger event, so scripts know we won't reconnect
+            return
+
+        self.irc_connection = self.proxy.irc_factory.create(address=self.config['server'])
         self.irc_connection.owner = self
-        self.irc_connection.reg_nickname = self.name
+        self.irc_connection.reg_nickname = self.config['nick']
         self.irc_connection.reg_username = self.name
-        self.irc_connection.reg_realname = 'sbncng client'
+        self.irc_connection.reg_realname = self.config['realname']
         
         self.irc_connection.start()
 
@@ -151,11 +181,9 @@ class ProxyUser(object):
                                        prefix=clientobj.server)
 
             clientobj.channels = []
+            
+        self.irc_connection = None
         
-        gevent.sleep(30)
-        
-        self.reconnect_to_irc()
-
     _irc_closed_handler = staticmethod(_irc_closed_handler)
 
     def _client_closed_handler(evt, clientobj):
