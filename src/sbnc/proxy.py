@@ -19,20 +19,47 @@ import gevent
 from sbnc import irc
 from sbnc.event import Event
 from sbnc.plugin import Service, ServiceRegistry
-from sbnc.irc import ClientConnection
+from sbnc.irc import IRCConnection, ClientConnection, ConnectionFactory
 
 class Proxy(Service):
     package = 'info.shroudbnc.services.proxy'
     
     def __init__(self):
-        self.irc_factory = irc.ConnectionFactory(irc.IRCConnection)
+        self.irc_factory = ConnectionFactory(IRCConnection)
 
-        self.client_factory = irc.ConnectionFactory(irc.ClientConnection)
+        self.client_factory = ConnectionFactory(irc.ClientConnection)
         
         ClientConnection.authentication_event.add_listener(self._client_authentication_handler,
                                                            Event.Handler,
-                                                           irc.ConnectionFactory.match_factory(self.client_factory))
+                                                           ConnectionFactory.match_factory(self.client_factory))
 
+        ClientConnection.registration_event.add_listener(ProxyUser._client_registration_handler,
+                                                  Event.PreObserver,
+                                                  ConnectionFactory.match_factory(self.client_factory))
+        ClientConnection.registration_event.add_listener(ProxyUser._client_post_registration_handler,
+                                                  Event.PostObserver,
+                                                  ConnectionFactory.match_factory(self.client_factory))
+
+        ClientConnection.command_received_event.add_listener(ProxyUser._client_command_handler,
+                                                             Event.Handler,
+                                                             ConnectionFactory.match_factory(self.client_factory),
+                                                             last=True)
+
+        ClientConnection.connection_closed_event.add_listener(ProxyUser._client_closed_handler,
+                                                              Event.PostObserver,
+                                                              ConnectionFactory.match_factory(self.client_factory))
+
+        IRCConnection.command_received_event.add_listener(ProxyUser._irc_command_handler,
+                                                          Event.Handler,
+                                                          ConnectionFactory.match_factory(self.irc_factory),
+                                                          last=True)
+        IRCConnection.connection_closed_event.add_listener(ProxyUser._irc_closed_handler,
+                                                           Event.PreObserver,
+                                                           ConnectionFactory.match_factory(self.irc_factory))
+        IRCConnection.registration_event.add_listener(ProxyUser._irc_registration_handler,
+                                                            Event.PreObserver,
+                                                            ConnectionFactory.match_factory(self.irc_factory))
+        
         self.users = {}
         self.config = {}
         
@@ -41,19 +68,27 @@ class Proxy(Service):
         
         self.client_registration_event = Event()
         self.client_registration_event.bind(irc.ClientConnection.registration_event,
-                                            filter=irc.ConnectionFactory.match_factory(self.client_factory))
+                                            filter=ConnectionFactory.match_factory(self.client_factory))
 
         self.irc_registration_event = Event()
-        self.irc_registration_event.bind(irc.IRCConnection.registration_event,
-                                         filter=irc.ConnectionFactory.match_factory(self.irc_factory))
+        self.irc_registration_event.bind(IRCConnection.registration_event,
+                                         filter=ConnectionFactory.match_factory(self.irc_factory))
 
         self.client_command_received_event = Event()
         self.client_command_received_event.bind(irc.ClientConnection.command_received_event,
-                                            filter=irc.ConnectionFactory.match_factory(self.client_factory))
+                                            filter=ConnectionFactory.match_factory(self.client_factory))
 
         self.irc_command_received_event = Event()
-        self.irc_command_received_event.bind(irc.IRCConnection.command_received_event,
-                                         filter=irc.ConnectionFactory.match_factory(self.irc_factory))
+        self.irc_command_received_event.bind(IRCConnection.command_received_event,
+                                         filter=ConnectionFactory.match_factory(self.irc_factory))
+
+        self.client_connection_closed_event = Event()
+        self.client_connection_closed_event.bind(ClientConnection.connection_closed_event,
+                                         filter=ConnectionFactory.match_factory(self.irc_factory))
+
+        self.irc_connection_closed_event = Event()
+        self.irc_connection_closed_event.bind(IRCConnection.connection_closed_event,
+                                         filter=ConnectionFactory.match_factory(self.irc_factory))
 
     def _client_authentication_handler(self, evt, clientobj, username, password):
         if not username in self.users:
@@ -65,11 +100,6 @@ class Proxy(Service):
             return Event.Continue
         
         clientobj.owner = userobj
-
-        clientobj.registration_event.add_listener(clientobj.owner._client_registration_handler,
-                                                  Event.PreObserver)
-        clientobj.registration_event.add_listener(clientobj.owner._client_post_registration_handler,
-                                                  Event.PostObserver)
 
         return Event.Handled
 
@@ -109,16 +139,11 @@ class ProxyUser(object):
         self.irc_connection.reg_username = self.name
         self.irc_connection.reg_realname = 'sbncng client'
         
-        self.irc_connection.command_received_event.add_listener(self._irc_command_handler,
-                                                                Event.PostObserver)
-        self.irc_connection.connection_closed_event.add_listener(self._irc_closed_handler,
-                                                                 Event.PreObserver)
-        self.irc_connection.registration_event.add_listener(self._irc_registration_handler,
-                                                            Event.PreObserver)
-        
         self.irc_connection.start()
 
-    def _irc_closed_handler(self, evt, ircobj):
+    def _irc_closed_handler(evt, ircobj):
+        self = ircobj.owner
+
         for clientobj in self.client_connections:
             for channel in clientobj.channels:
                 clientobj.send_message('KICK', channel, clientobj.me.nick,
@@ -131,11 +156,21 @@ class ProxyUser(object):
         
         self.reconnect_to_irc()
 
-    def _client_closed_handler(self, evt, clientobj):
-        self.client_connections.remove(clientobj)
+    _irc_closed_handler = staticmethod(_irc_closed_handler)
 
-    def _client_registration_handler(self, evt, clientobj):
-        clientobj.connection_closed_event.add_listener(self._client_closed_handler, Event.PostObserver)
+    def _client_closed_handler(evt, clientobj):
+        self = clientobj.owner
+        
+        if self == None:
+            return
+        
+        self.client_connections.remove(clientobj)
+        
+    _client_closed_handler = staticmethod(_client_closed_handler)
+
+    def _client_registration_handler(evt, clientobj):
+        self = clientobj.owner
+        
         self.client_connections.append(clientobj)
 
         if self.irc_connection.registered and clientobj.me.nick != self.irc_connection.me.nick:
@@ -150,22 +185,34 @@ class ProxyUser(object):
             clientobj.channels = self.irc_connection.channels
             clientobj.nicks = self.irc_connection.nicks
 
-        clientobj.command_received_event.add_listener(self._client_command_handler,
-                                                      Event.Handler, last=True)
+    _client_registration_handler = staticmethod(_client_registration_handler)
 
-    def _client_post_registration_handler(self, evt, clientobj):
+    def _client_post_registration_handler(evt, clientobj):
+        self = clientobj.owner
+        
         for channel in self.irc_connection.channels:
             clientobj.send_message('JOIN', channel, prefix=self.irc_connection.me)
             clientobj.process_line('TOPIC %s' % (channel))
             clientobj.process_line('NAMES %s' % (channel))
+            
+    _client_post_registration_handler = staticmethod(_client_post_registration_handler)
 
-    def _irc_registration_handler(self, evt, ircobj):
+    def _irc_registration_handler(evt, ircobj):
+        self = ircobj.owner
+
         for clientobj in self.client_connections:
             if clientobj.me.nick != ircobj.me.nick:
                 clientobj.send_message('NICK', self.irc_connection.me.nick, prefix=clientobj.me)
                 clientobj.me.nick = self.irc_connection.me.nick
 
-    def _client_command_handler(self, evt, clientobj, command, nickobj, params):
+    _irc_registration_handler = staticmethod(_irc_registration_handler)
+
+    def _client_command_handler(evt, clientobj, command, nickobj, params):
+        self = clientobj.owner
+        
+        if self == None or not clientobj.registered:
+            return Event.Continue
+        
         command = command.upper();
 
         if command in ['PASS', 'USER', 'QUIT'] or evt.handled:
@@ -178,14 +225,18 @@ class ProxyUser(object):
         
         return Event.Handled
 
-    def _irc_command_handler(self, evt, ircobj, command, nickobj, params):
+    _client_command_handler = staticmethod(_client_command_handler)
+
+    def _irc_command_handler(evt, ircobj, command, nickobj, params):
+        self = ircobj.owner
+        
         if not ircobj.registered:
-            return
+            return Event.Continue
         
         command = command.upper();
 
         if command in ['ERROR']:
-            return
+            return Event.Continue
     
         for clientobj in self.client_connections:
             if not clientobj.registered:
@@ -197,6 +248,10 @@ class ProxyUser(object):
                 mapped_prefix = nickobj
 
             clientobj.send_message(command, prefix=mapped_prefix, *params)
+
+        return Event.Handled
+
+    _irc_command_handler = staticmethod(_irc_command_handler)
 
     def check_password(self, password):
         return 'password' in self.config and self.config['password'] == password

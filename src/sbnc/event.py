@@ -107,6 +107,8 @@ class Event(object):
         # TODO: figure out whether we want to catch exceptions here
         # and log them in a user-friendly fashion
 
+        handled = False
+
         for type in [Event.PreObserver, Event.Handler, Event.PostObserver]:
             for handler in self.handlers:
                 if handler[1] != type:
@@ -114,6 +116,8 @@ class Event(object):
 
                 if type != Event.Handler:
                     handled = False
+                    
+                self.handled = handled
 
                 if handler[2] != None and \
                         not handler[2](self, sender, **kwargs):
@@ -137,5 +141,5 @@ class Event(object):
                     if result != None:
                         raise ValueError('PreObserver and PostObserver callback functions ' +
                                          'must return None.')
-                
+
         return handled

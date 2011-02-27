@@ -47,18 +47,12 @@ class QueryLogPlugin(Plugin):
         ui_svc.register_command('erase', self._cmd_erase_handler, 'User', 'erases your message log',
                                 'Syntax: erase\nErases your private log.')
 
-    def _irc_registration_handler(self, evt, ircobj):
-        self._register_handlers(ircobj)
-    
     def _client_registration_event(self, evt, clientobj):
         if len(self.get_querylog(clientobj.owner)) == 0:
             return
         
         ui_svc.send_sbnc_reply(clientobj, 'You have new messages. Use \'/msg -sBNC read\' ' +
                                'to view them.', notice=False)
-    
-    def _register_handlers(self, ircobj):
-        ircobj.add_command_handler('PRIVMSG', self._irc_privmsg_handler)
     
     def _irc_privmsg_handler(self, evt, ircobj, command, nickobj, params):
         if len(params) < 2:

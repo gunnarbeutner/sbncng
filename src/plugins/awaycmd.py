@@ -31,12 +31,13 @@ class AwayCommandPlugin(Plugin):
     def __init__(self):
         proxy_svc.client_registration_event.add_listener(self._client_registration_handler,
                                                          Event.PostObserver)
-        # TODO: implement proxy_svc.client_connection_closed_event
+
+        proxy_svc.client_connection_closed_event.add_listener(self._client_closed_handler,
+                                                       Event.PostObserver)
+
         # TODO: implement setting
 
-    def _client_registration_handler(self, evt, clientobj):
-        clientobj.connection_closed_event.add_listener(self._client_closed_handler, Event.PostObserver)
-        
+    def _client_registration_handler(self, evt, clientobj):        
         if clientobj.owner.irc_connection == None or not clientobj.owner.irc_connection.registered:
             return
 
