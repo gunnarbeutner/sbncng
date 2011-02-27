@@ -60,7 +60,7 @@ class QueryLogPlugin(Plugin):
     def _register_handlers(self, ircobj):
         ircobj.add_command_handler('PRIVMSG', self._irc_privmsg_handler)
     
-    def _irc_privmsg_handler(self, evt, ircobj, nickobj, params):
+    def _irc_privmsg_handler(self, evt, ircobj, command, nickobj, params):
         if len(params) < 2:
             return
         

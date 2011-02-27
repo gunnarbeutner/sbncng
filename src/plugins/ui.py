@@ -73,20 +73,18 @@ class UIPlugin(Plugin):
         """
 
         if not clientobj.registered or len(params) < 1:
-            return
+            return Event.Continue
 
         target = params[0]
         targetobj = clientobj.get_nick(target)
 
         # TODO: use the nick from _identity
         if targetobj.nick.upper() != '-SBNC':
-            return
-
-        evt.stop_handlers()
+            return Event.Continue
 
         if len(params) < 2:
             clientobj.send_message('ERR_NOTEXTTOSEND', prefix=clientobj.server)
-            return
+            return Event.Handled
 
         text = params[1]
         
@@ -96,21 +94,23 @@ class UIPlugin(Plugin):
             # TODO: use the nick from _identity
             self.send_sbnc_reply(clientobj, 'Unknown command. Try /msg -sBNC help', notice=False)
     
+        return Event.Handled
+    
     def _client_sbnc_handler(self, evt, clientobj, command, nickobj, params):
         """
         SBNC handler. Checks whether we have enough parameters and passes the command
         to _handle_command.
         """
 
-        evt.stop_handlers()
-        
         if len(params) < 1:
             clientobj.send_reply('ERR_NEEDMOREPARAMS', prefix=clientobj.server)
-            return
+            return Event.Handled
         
         if not self._handle_command(clientobj, params[0], params[1:], True):
             # TODO: use the nick from _identity
             self.send_sbnc_reply(clientobj, 'Unknown command. Try /sbnc help', notice=True)
+    
+        return Event.Handled
     
     def _handle_command(self, clientobj, command, params, notice):
         """Handles the command."""
@@ -119,7 +119,7 @@ class UIPlugin(Plugin):
             cmdobj = self.commands[command]
             
             if not cmdobj['access_check'](clientobj):
-                return
+                return False
 
             cmdobj['callback'](clientobj, params, notice)
             return True

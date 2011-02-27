@@ -18,7 +18,6 @@
 import gevent
 from sbnc import irc
 from sbnc.event import Event
-from sbnc.timer import Timer
 from sbnc.plugin import Service, ServiceRegistry
 from sbnc.irc import ClientConnection
 
@@ -58,18 +57,21 @@ class Proxy(Service):
 
     def _client_authentication_handler(self, evt, clientobj, username, password):
         if not username in self.users:
-            return None
+            return Event.Continue
         
         userobj = self.users[clientobj.me.user]
         
         if not userobj.check_password(password):
-            return None
+            return Event.Continue
         
         clientobj.owner = userobj
-        evt.stop_handlers()
 
         clientobj.registration_event.add_listener(clientobj.owner._client_registration_handler,
                                                   Event.PreObserver)
+        clientobj.registration_event.add_listener(clientobj.owner._client_post_registration_handler,
+                                                  Event.PostObserver)
+
+        return Event.Handled
 
     def create_user(self, name):
         user = ProxyUser(self, name)
@@ -104,7 +106,7 @@ class ProxyUser(object):
         self.irc_connection = self.proxy.irc_factory.create(address=('irc.quakenet.org', 6667))
         self.irc_connection.owner = self
         self.irc_connection.reg_nickname = self.name
-        self.irc_connection.reg_username = 'sbncng'
+        self.irc_connection.reg_username = self.name
         self.irc_connection.reg_realname = 'sbncng client'
         
         self.irc_connection.command_received_event.add_listener(self._irc_command_handler,
@@ -112,7 +114,7 @@ class ProxyUser(object):
         self.irc_connection.connection_closed_event.add_listener(self._irc_closed_handler,
                                                                  Event.PreObserver)
         self.irc_connection.registration_event.add_listener(self._irc_registration_handler,
-                                                            Event.PostObserver)
+                                                            Event.PreObserver)
         
         self.irc_connection.start()
 
@@ -142,9 +144,6 @@ class ProxyUser(object):
 
             self.irc_connection.send_message('NICK', clientobj.me.nick)
 
-        timer = Timer(0, self._client_post_registration_timer, clientobj)
-        timer.start()
-
         if self.irc_connection != None:
             clientobj.motd = self.irc_connection.motd
             clientobj.isupport = self.irc_connection.isupport
@@ -154,7 +153,7 @@ class ProxyUser(object):
         clientobj.command_received_event.add_listener(self._client_command_handler,
                                                       Event.Handler, last=True)
 
-    def _client_post_registration_timer(self, clientobj):
+    def _client_post_registration_handler(self, evt, clientobj):
         for channel in self.irc_connection.channels:
             clientobj.send_message('JOIN', channel, prefix=self.irc_connection.me)
             clientobj.process_line('TOPIC %s' % (channel))
@@ -170,14 +169,14 @@ class ProxyUser(object):
         command = command.upper();
 
         if command in ['PASS', 'USER', 'QUIT'] or evt.handled:
-            return
+            return Event.Continue
 
         if self.irc_connection == None or (not self.irc_connection.registered and command != 'NICK'):
-            return
+            return Event.Continue
 
         self.irc_connection.send_message(command, prefix=nickobj, *params)
         
-        evt.stop_handlers()
+        return Event.Handled
 
     def _irc_command_handler(self, evt, ircobj, command, nickobj, params):
         if not ircobj.registered:
@@ -201,8 +200,5 @@ class ProxyUser(object):
 
     def check_password(self, password):
         return 'password' in self.config and self.config['password'] == password
-
-    # TODO: irc_registration event, needs to force-change client's nick if different
-    # from the irc connection
 
 ServiceRegistry.register(Proxy)

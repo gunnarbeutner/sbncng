@@ -39,6 +39,10 @@ class Event(object):
     PreObserver = 0
     Handler = 1
     PostObserver = 2
+    
+    Continue = 1
+    Handled = 2
+    RemoveHandler = 4
 
     def __init__(self, filter=None):
         self.handlers = []
@@ -103,32 +107,35 @@ class Event(object):
         # TODO: figure out whether we want to catch exceptions here
         # and log them in a user-friendly fashion
 
-        self.handled = False
-        handled = False
-
         for type in [Event.PreObserver, Event.Handler, Event.PostObserver]:
             for handler in self.handlers:
                 if handler[1] != type:
                     continue
 
                 if type != Event.Handler:
-                    self.handled = False
+                    handled = False
 
                 if handler[2] != None and \
                         not handler[2](self, sender, **kwargs):
                     continue
 
-                handler[0](self, sender, **kwargs)
-
-                if type == Event.Handler and self.handled:
-                    handled = True
-                    break
+                result = handler[0](self, sender, **kwargs)
+                
+                if type == Event.Handler:
+                    if not result in [Event.Continue, Event.Handled, Event.RemoveHandler]:
+                        raise ValueError('Handler must return one of Event.Continue, ' +
+                                         'Event.Handled and Event.RemoveHandler')
+                        
+                    if result & Event.RemoveHandler:
+                        # TODO: remove the handler
+                        raise NotImplementedError()
+                    
+                    if result & Event.Handled:
+                        handled = True
+                        break
+                else:
+                    if result != None:
+                        raise ValueError('PreObserver and PostObserver callback functions ' +
+                                         'must return None.')
                 
         return handled
-
-    def stop_handlers(self):
-        """
-        Stops event handlers from being called for the current invocation.
-        """
-
-        self.handled = True
