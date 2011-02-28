@@ -125,13 +125,13 @@ class _BaseConnection(object):
         return gevent.spawn(self._run)
 
     def _run(self):
-        if self.socket == None:
-            self.socket = socket.create_connection(self.socket_address)
-        
-        self._line_writer = QueuedLineWriter(self.socket)
-        self._line_writer.start()
-
         try:
+            if self.socket == None:
+                self.socket = socket.create_connection(self.socket_address)
+
+            self._line_writer = QueuedLineWriter(self.socket)
+            self._line_writer.start()
+
             self.handle_connection_made()
 
             connection = self.socket.makefile('w+b', 1)

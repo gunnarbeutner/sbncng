@@ -201,7 +201,8 @@ class ProxyUser(object):
         
         self.client_connections.append(clientobj)
 
-        if self.irc_connection.registered and clientobj.me.nick != self.irc_connection.me.nick:
+        if self.irc_connection != None and self.irc_connection.registered and \
+                clientobj.me.nick != self.irc_connection.me.nick:
             clientobj.send_message('NICK', self.irc_connection.me.nick, prefix=clientobj.me)
             clientobj.me.nick = self.irc_connection.me.nick
 
@@ -217,6 +218,9 @@ class ProxyUser(object):
 
     def _client_post_registration_handler(evt, clientobj):
         self = clientobj.owner
+        
+        if self.irc_connection == None:
+            return
         
         for channel in self.irc_connection.channels:
             clientobj.send_message('JOIN', channel, prefix=self.irc_connection.me)
