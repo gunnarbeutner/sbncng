@@ -15,6 +15,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
+from time import time
 from datetime import datetime
 from sbnc.plugin import Plugin, ServiceRegistry
 from sbnc.event import Event
@@ -48,7 +49,10 @@ class QueryLogPlugin(Plugin):
                                 'Syntax: erase\nErases your private log.')
 
     def _client_registration_event(self, evt, clientobj):
-        if len(self.get_querylog(clientobj.owner)) == 0:
+        querylog = self.get_querylog(clientobj.owner)
+        messages = querylog.attributes
+        
+        if len(messages) == 0:
             return
         
         ui_svc.send_sbnc_reply(clientobj, 'You have new messages. Use \'/msg -sBNC read\' ' +
@@ -69,34 +73,34 @@ class QueryLogPlugin(Plugin):
         
         if ircobj.me.nick != target:
             return
-        
-        if not 'querylog' in ircobj.owner.tags:
-            ircobj.owner.tags['querylog'] = []
-        
+                
         item = {
-            'timestamp': datetime.now(),
+            'timestamp': time(),
             'source': str(nickobj),
             'text': text
         }
-        
-        ircobj.owner.tags['querylog'].append(item)
+
+        querylog = self.get_querylog(ircobj.owner)
+        querylog.append(item)
     
     def get_querylog(self, userobj):
-        if not 'querylog' in userobj.tags:
-            return []
-        else:
-            return userobj.tags['querylog']
+        user_config = userobj.get_plugin_config(self.__class__)
+        return user_config['querylog']
     
     def _cmd_read_handler(self, clientobj, params, notice):
         querylog = self.get_querylog(clientobj.owner)
         
-        if len(querylog) == 0:
+        messages = querylog.attributes
+        
+        if len(messages) == 0:
             ui_svc.send_sbnc_reply(clientobj, 'Your personal log is empty.', notice)
             return
         
-        for message in querylog:
-            ui_svc.send_sbnc_reply(clientobj, '[%s] %s: %s' % (message['timestamp'],
-                                              message['source'], message['text']), notice)
+        for message_node in messages:
+            message = message_node.value
+            ui_svc.send_sbnc_reply(clientobj, '[%s] %s: %s' %
+                                   (datetime.utcfromtimestamp(message['timestamp']),
+                                   message['source'], message['text']), notice)
             
         if notice:
             erasecmd = '/sbnc erase'
@@ -107,13 +111,14 @@ class QueryLogPlugin(Plugin):
                                'remove this log.', notice)
     
     def erase_querylog(self, userobj):
-        if 'querylog' in userobj.tags:
-            del userobj.tags['querylog']
+        querylog = self.get_querylog(userobj)
+        querylog.clear()
     
     def _cmd_erase_handler(self, clientobj, params, notice):
         querylog = self.get_querylog(clientobj.owner)
+        messages = querylog.attributes
         
-        if len(querylog) == 0:
+        if len(messages) == 0:
             ui_svc.send_sbnc_reply(clientobj, 'Your personal log is empty.', notice)
             return
 

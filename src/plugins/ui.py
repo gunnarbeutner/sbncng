@@ -34,7 +34,7 @@ class UIAccessCheck(object):
     def admin(clientobj):
         """Returns True for any user who is an admin."""
  
-        return ('admin' in clientobj.owner.config and clientobj.owner.config['admin'])
+        return clientobj.owner.admin
 
 proxy_svc = ServiceRegistry.get(Proxy.package)
 

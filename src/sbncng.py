@@ -26,11 +26,18 @@ except ImportError:
 
 from sbnc.irc import ClientListener
 from sbnc.proxy import Proxy
+from sbnc.directory import DirectoryService
 from sbnc.plugin import ServiceRegistry
+
+dir_svc = ServiceRegistry.get(DirectoryService.package)
+dir_svc.start('sqlite:///sbncng.db')
+config_root = dir_svc.get_root_node()
 
 proxy_svc = ServiceRegistry.get(Proxy.package)
 
 print('sbncng (' + proxy_svc.version + ') - an object-oriented IRC bouncer')
+
+proxy_svc.start(config_root)
 
 execfile('plugins/plugin101.py')
 execfile('plugins/ui.py')
@@ -38,7 +45,10 @@ execfile('plugins/awaycmd.py')
 execfile('plugins/admincmd.py')
 execfile('plugins/querylog.py')
 
-listener = ClientListener( ('0.0.0.0', 9000), proxy_svc.client_factory )
+# TODO: move this into the Proxy plugin
+listener_address = config_root.get('listener_address', ['0.0.0.0', 9000])
+
+listener = ClientListener( tuple(listener_address), proxy_svc.client_factory )
 task = listener.start()
 
 task.join()

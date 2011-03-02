@@ -30,11 +30,15 @@ class TestPlugin(Plugin):
     description = __doc__
     
     def __init__(self):
-        user = proxy_svc.create_user('shroud')
-        user.config['password'] = 'keks'
-        user.config['admin'] = True
-        user.config['away'] = 'moo!'
-        user.config['server'] = ('irc.quakenet.org', 6667)
+        try:
+            user = proxy_svc.create_user('shroud')
+            user_config_proxy = user.get_plugin_config(Proxy)
+            user_config_proxy.set('password', 'keks')
+            user_config_proxy.set('admin', True)
+            user_config_proxy.set('away', 'moo!')
+            user_config_proxy.set('server_address', ('irc.quakenet.org', 6667))
+        except ValueError:
+            pass
         
         ui_svc.register_command('moo', self._cmd_moo_handler, 'User', 'says moo', 'Syntax: moo')
 

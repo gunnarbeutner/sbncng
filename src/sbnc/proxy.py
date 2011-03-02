@@ -15,7 +15,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
-from datetime import datetime, timedelta
+from time import time
 from sbnc import irc
 from sbnc.event import Event
 from sbnc.plugin import Service, ServiceRegistry
@@ -31,6 +31,10 @@ class Proxy(Service):
         self.irc_factory = ConnectionFactory(IRCConnection)
 
         self.client_factory = ConnectionFactory(irc.ClientConnection)
+    
+    def start(self, config_root_node):
+        self._config_root = config_root_node
+        self._config = self.get_plugin_config(Proxy)
         
         ClientConnection.authentication_event.add_listener(self._client_authentication_handler,
                                                            Event.Handler,
@@ -64,7 +68,9 @@ class Proxy(Service):
                                                             ConnectionFactory.match_factory(self.irc_factory))
         
         self.users = {}
-        self.config = {}
+        
+        for user_config in self._config['users']:
+            self.users[user_config.name] = ProxyUser(self, user_config)
         
         self._last_reconnect = None
         Timer(10, self._reconnect_timer).start()
@@ -110,7 +116,11 @@ class Proxy(Service):
         return Event.Handled
 
     def create_user(self, name):
-        user = ProxyUser(self, name)
+        if name in self.users:
+            raise ValueError('User already exists.')
+        
+        user_config = self._config['users'][name]
+        user = ProxyUser(self, user_config)
         self.users[name] = user
         
         # TODO: event
@@ -121,55 +131,61 @@ class Proxy(Service):
         # TODO: event
 
         del self.users[name]
+        del self.config['users'][name]
         
     def _reconnect_timer(self):
         if self._last_reconnect != None and \
-                self._last_reconnect > datetime.now() - timedelta(seconds=60):
+                self._last_reconnect > time() - 60:
             return True
         
         for userobj in self.users.values():
-            if userobj.irc_connection != None or ('last_reconnect' in userobj.tags and \
-                    userobj.tags['last_reconnect'] > datetime.now() - timedelta(seconds=120)):
+            if userobj.irc_connection != None or (userobj.last_reconnect != None and \
+                    userobj.last_reconnect > time() - 120):
                 continue
 
-            self._last_reconnect = datetime.now()
-            userobj.tags['last_reconnect'] = self._last_reconnect
+            self._last_reconnect = time()
             userobj.reconnect_to_irc()
             
             break
         
         return True
+    
+    def get_plugin_config(self, plugin_cls):
+        return self._config_root[plugin_cls.package]
 
 class ProxyUser(object):
-    def __init__(self, proxy, name):
+    def __init__(self, proxy, user_config):
         self.proxy = proxy
-        self.name = name
+        self.name = user_config.name
         
-        self.config = {}
-        self.tags = {}
-        
-        self.config['nick'] = name
-        self.config['realname'] = 'sbncng User'
-        self.config['server'] = None
+        self._config_root = user_config
+        self._config = self.get_plugin_config(Proxy)
         
         self.irc_connection = None
         self.client_connections = []
         
+    def get_plugin_config(self, plugin_cls):
+        return self._config_root[plugin_cls.package]
+
     def reconnect_to_irc(self):
         if self.irc_connection != None:
             self.irc_connection.close('Reconnecting.')
 
-        if not 'server' in self.config or self.config['server'] == None:
+        server_address = self._config.get('server_address', None)
+
+        if server_address == None:
             # TODO: trigger event, so scripts know we won't reconnect
             return
 
-        self.irc_connection = self.proxy.irc_factory.create(address=self.config['server'])
+        self.irc_connection = self.proxy.irc_factory.create(address=tuple(server_address))
         self.irc_connection.owner = self
-        self.irc_connection.reg_nickname = self.config['nick']
-        self.irc_connection.reg_username = self.name
-        self.irc_connection.reg_realname = self.config['realname']
+        self.irc_connection.reg_nickname = self._config.get('nick', self.name)
+        self.irc_connection.reg_username = self._config.get('username', self.name)
+        self.irc_connection.reg_realname = self._config.get('realname', 'sbncng User')
         
         self.irc_connection.start()
+        
+        self.last_reconnect = time()
 
     @staticmethod
     def _irc_closed_handler(evt, ircobj):
@@ -279,6 +295,30 @@ class ProxyUser(object):
         return Event.Handled
 
     def check_password(self, password):
-        return 'password' in self.config and self.config['password'] == password
+        return password != None and self._config.get('password', None) == password
+
+    def _get_last_reconnect(self):
+        return self._config.get('last_reconnect', None)
+    
+    def _set_last_reconnect(self, value):
+        self._config.set('last_reconnect', value)
+
+    last_reconnect = property(_get_last_reconnect, _set_last_reconnect)
+    
+    def _get_password(self):
+        return self._config.get('password', None)
+    
+    def _set_password(self, value):
+        self._config.set('password', value)
+
+    password = property(_get_password, _set_password)
+
+    def _get_admin(self):
+        return self._config.get('admin', None)
+    
+    def _set_admin(self, value):
+        self._config.set('admin', value)
+
+    admin = property(_get_admin, _set_admin)
 
 ServiceRegistry.register(Proxy)

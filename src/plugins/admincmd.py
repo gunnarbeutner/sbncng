@@ -77,7 +77,7 @@ class AdminCommandPlugin(Plugin):
             return
 
         userobj = proxy_svc.create_user(user)
-        userobj.config['password'] = password
+        userobj.password = password
         
         if len(params) >= 2:
             ui_svc.send_sbnc_reply(clientobj, 'Done.', notice)
@@ -98,7 +98,7 @@ class AdminCommandPlugin(Plugin):
             
         userobj = proxy_svc.users[user]
         
-        userobj.config['admin'] = True
+        userobj.admin = True
         
         ui_svc.send_sbnc_reply(clientobj, 'Done.', notice)
 
@@ -154,7 +154,7 @@ class AdminCommandPlugin(Plugin):
             password = AdminCommandPlugin._random_password()
             
         userobj = proxy_svc.users[user]
-        userobj.config['password'] = password
+        userobj.password = password
         
         if len(params) >= 2:
             ui_svc.send_sbnc_reply(clientobj, 'Done.', notice)
@@ -193,7 +193,7 @@ class AdminCommandPlugin(Plugin):
             
         userobj = proxy_svc.users[user]
         
-        userobj.config['admin'] = False
+        userobj.admin = False
         
         ui_svc.send_sbnc_reply(clientobj, 'Done.', notice)
         

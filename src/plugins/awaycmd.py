@@ -47,13 +47,14 @@ class AwayCommandPlugin(Plugin):
         if clientobj.owner.irc_connection == None or not clientobj.owner.irc_connection.registered:
             return
 
-        if 'away' not in clientobj.owner.config or clientobj.owner.config['away'] == '':
+        user_config = clientobj.owner.get_plugin_config(self.__class__)
+        away_text = user_config.get('away', None)
+
+        if away_text == None or away_text == '':
             return
         
-        message = clientobj.owner.config['away']
-    
         if len(clientobj.owner.client_connections) == 0 or \
                 clientobj.owner.client_connections == [clientobj]:
-            clientobj.owner.irc_connection.send_message('AWAY', message)
+            clientobj.owner.irc_connection.send_message('AWAY', away_text)
 
 ServiceRegistry.register(AwayCommandPlugin)
