@@ -24,19 +24,17 @@ from sbnc.irc import match_command
 class UIAccessCheck(object):
     """Helper functions for checking users' access."""
 
+    @staticmethod
     def anyone(clientobj):
         """Returns True for any user."""
 
         return True
-    
-    anyone = staticmethod(anyone)
-    
+
+    @staticmethod    
     def admin(clientobj):
         """Returns True for any user who is an admin."""
  
         return ('admin' in clientobj.owner.config and clientobj.owner.config['admin'])
-
-    admin = staticmethod(admin)
 
 proxy_svc = ServiceRegistry.get(Proxy.package)
 

@@ -54,12 +54,11 @@ class AdminCommandPlugin(Plugin):
                                 'Syntax: unsuspend <username>\nRemoves a suspension from the specified account.', UIAccessCheck.admin)
         ui_svc.register_command('who', self._cmd_who_handler, 'Admin', 'shows users',
                                 'Syntax: who\nShows a list of all users.', UIAccessCheck.admin)
-        
+    
+    @staticmethod
     def _random_password(length = 12):
         letters = string.ascii_letters + string.digits
         return ''.join([random.choice(letters) for _ in range(length)])
-                       
-    _random_password = staticmethod(_random_password)
     
     def _cmd_adduser_handler(self, clientobj, params, notice):
         if len(params) < 1:

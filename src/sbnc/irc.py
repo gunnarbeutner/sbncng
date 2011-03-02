@@ -231,13 +231,12 @@ class _BaseConnection(object):
 class ConnectionFactory(object):
     new_connection_event = Event()
 
+    @staticmethod
     def match_factory(value):
         def match_factory_helper(*args, **kwargs):
             return args[1].factory == value
         
         return lambda *args, **kwargs: match_factory_helper(*args, **kwargs)
-
-    match_factory = staticmethod(match_factory)
 
     def __init__(self, cls):
         evt = Event()
@@ -296,6 +295,7 @@ class IRCConnection(_BaseConnection):
     class CommandHandlers(object):
         _initialized = False
         
+        @staticmethod
         def register_handlers():
             if IRCConnection.CommandHandlers._initialized:
                 return
@@ -341,9 +341,8 @@ class IRCConnection(_BaseConnection):
             IRCConnection.command_received_event.add_listener(IRCConnection.CommandHandlers.irc_329,
                                                               Event.PreObserver, match_command('329'))
 
-        register_handlers = staticmethod(register_handlers)
-
         # PING :wineasy1.se.quakenet.org
+        @staticmethod
         def irc_PING(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 return Event.Continue
@@ -352,17 +351,15 @@ class IRCConnection(_BaseConnection):
 
             return Event.Handled
 
-        irc_PING = staticmethod(irc_PING)
-
         # ERROR :Registration timeout.
+        @staticmethod
         def irc_ERROR(evt, ircobj, command, nickobj, params):
             ircobj.close()
 
             return Event.Handled            
             
-        irc_ERROR = staticmethod(irc_ERROR)
-
         # :wineasy1.se.quakenet.org 001 shroud_ :Welcome to the QuakeNet IRC Network, shroud_
+        @staticmethod
         def irc_001(evt, ircobj, command, nickobj, params):
             ircobj.me.nick = ircobj.reg_nickname
 
@@ -370,10 +367,9 @@ class IRCConnection(_BaseConnection):
 
             ircobj.register_user()
 
-        irc_001 = staticmethod(irc_001)
-
         # :wineasy1.se.quakenet.org 005 shroud_ WHOX WALLCHOPS WALLVOICES USERIP CPRIVMSG CNOTICE \
         # SILENCE=15 MODES=6 MAXCHANNELS=20 MAXBANS=45 NICKLEN=15 :are supported by this server
+        @staticmethod
         def irc_005(evt, ircobj, command, nickobj, params):
             if len(params) < 3:
                 return
@@ -393,15 +389,13 @@ class IRCConnection(_BaseConnection):
 
             print attribs
 
-        irc_005 = staticmethod(irc_005)
-
         # :wineasy1.se.quakenet.org 375 shroud_ :- wineasy1.se.quakenet.org Message of the Day - 
+        @staticmethod
         def irc_375(evt, ircobj, command, nickobj, params):
             ircobj.motd = []
 
-        irc_375 = staticmethod(irc_375)
-
         # :wineasy1.se.quakenet.org 372 shroud_ :- ** [ wineasy.se.quakenet.org ] **************************************** 
+        @staticmethod
         def irc_372(evt, ircobj, command, nickobj, params):
             if len(params) < 2:
                 return
@@ -413,9 +407,8 @@ class IRCConnection(_BaseConnection):
             
             ircobj.motd.append(params[1])
 
-        irc_372 = staticmethod(irc_372)
-
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net NICK :shroud__
+        @staticmethod
         def irc_NICK(evt, ircobj, command, nickobj, params):
             if len(params) < 1 or nickobj == None:
                 return
@@ -433,9 +426,8 @@ class IRCConnection(_BaseConnection):
                 del ircobj.nicks[oldnick]
                 ircobj.nicks[newnick] = nickobj
                 
-        irc_NICK = staticmethod(irc_NICK)
-
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net JOIN #sbncng
+        @staticmethod
         def irc_JOIN(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 return
@@ -453,9 +445,8 @@ class IRCConnection(_BaseConnection):
 
             channelobj.add_nick(nickobj)
 
-        irc_JOIN = staticmethod(irc_JOIN)
-
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net PART #sbncng
+        @staticmethod
         def irc_PART(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 return
@@ -475,9 +466,8 @@ class IRCConnection(_BaseConnection):
                 
                 channelobj.remove_nick(nickobj)
 
-        irc_PART = staticmethod(irc_PART)
-        
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net KICK #sbncng sbncng :test
+        @staticmethod
         def irc_KICK(evt, ircobj, command, nickobj, params):
             if len(params) < 2:
                 return
@@ -500,18 +490,16 @@ class IRCConnection(_BaseConnection):
                 
                 channelobj.remove_nick(nickobj)
             
-        irc_KICK = staticmethod(irc_KICK)
-
         # :shroud_!~shroud@p579F98A1.dip.t-dialin.net QUIT :test
+        @staticmethod
         def irc_QUIT(evt, ircobj, command, nickobj, params):
             channels = list(nickobj.channels)
             
             for channel in channels:
                 channel.remove_nick(nickobj)
             
-        irc_QUIT = staticmethod(irc_QUIT)
-        
         # :server.shroudbnc.info 353 sbncng = #sbncng :sbncng @shroud
+        @staticmethod
         def irc_353(evt, ircobj, command, nickobj, params):
             if len(params) < 4:
                 return
@@ -549,9 +537,8 @@ class IRCConnection(_BaseConnection):
                 
                 print nick, modes
         
-        irc_353 = staticmethod(irc_353)
-        
         # :server.shroudbnc.info 366 sbncng #sbncng :End of /NAMES list.
+        @staticmethod
         def irc_366(evt, ircobj, command, nickobj, params):
             if len(params) < 2:
                 return
@@ -565,9 +552,8 @@ class IRCConnection(_BaseConnection):
 
             channelobj.has_names = True
             
-        irc_366 = staticmethod(irc_366)
-
         # :underworld2.no.quakenet.org 433 * shroud :Nickname is already in use.
+        @staticmethod
         def irc_433(evt, ircobj, command, nickobj, params):
             if len(params) < 2 or ircobj.registered:
                 return
@@ -577,10 +563,9 @@ class IRCConnection(_BaseConnection):
             ircobj.reg_nickname = newnick
                 
             ircobj.send_message('NICK', newnick)
-
-        irc_433 = staticmethod(irc_433)
         
         # :underworld2.no.quakenet.org 331 #channel :No topic is set
+        @staticmethod
         def irc_331(evt, ircobj, command, nickobj, params):
             if len(params) < 3:
                 return
@@ -597,9 +582,8 @@ class IRCConnection(_BaseConnection):
             channelobj.topic_time = None
             channelobj.has_topic = True
         
-        irc_331 = staticmethod(irc_331)
-
         # :underworld2.no.quakenet.org 332 #channel :Some topic.
+        @staticmethod
         def irc_332(evt, ircobj, command, nickobj, params):
             if len(params) < 3:
                 return
@@ -616,9 +600,8 @@ class IRCConnection(_BaseConnection):
             if channelobj.topic_nick != None:
                 channelobj.has_topic = True
                 
-        irc_332 = staticmethod(irc_332)
-
         # :underworld2.no.quakenet.org 333 #channel Nick 1297723476
+        @staticmethod
         def irc_333(evt, ircobj, command, nickobj, params):
             if len(params) < 4:
                 return
@@ -638,9 +621,8 @@ class IRCConnection(_BaseConnection):
             if channelobj.topic_text != None:
                 channelobj.has_topic = True
                 
-        irc_333 = staticmethod(irc_333)
-        
         # :shroud!shroud@help TOPIC #channel :new topic
+        @staticmethod
         def irc_TOPIC(evt, ircobj, command, nickobj, params):
             if len(params) < 2:
                 return
@@ -658,9 +640,8 @@ class IRCConnection(_BaseConnection):
             channelobj.topic_time = datetime.now()
             channelobj.has_topic = True
         
-        irc_TOPIC = staticmethod(irc_TOPIC)
-        
         # :underworld2.no.quakenet.org 329 shroud #sbfl 1233690341
+        @staticmethod
         def irc_329(evt, ircobj, command, nickobj, params):
             if len(params) < 3:
                 return
@@ -675,8 +656,6 @@ class IRCConnection(_BaseConnection):
             
             channelobj.creation_time = datetime.fromtimestamp(int(ts))
             
-        irc_329 = staticmethod(irc_329)
-
 # Register built-in handlers for the IRCConnection class        
 IRCConnection.CommandHandlers.register_handlers()
 
@@ -801,6 +780,7 @@ class ClientConnection(_BaseConnection):
     class CommandHandlers(object):
         _initialized = False
         
+        @staticmethod
         def register_handlers():
             if ClientConnection.CommandHandlers._initialized:
                 return
@@ -824,9 +804,8 @@ class ClientConnection(_BaseConnection):
             ClientConnection.command_received_event.add_listener(ClientConnection.CommandHandlers.irc_TOPIC,
                                                                  Event.Handler, match_command('TOPIC'))
 
-        register_handlers = staticmethod(register_handlers)
-
         # USER shroud * 0 :Gunnar Beutner
+        @staticmethod
         def irc_USER(evt, ircobj, command, nickobj, params):
             if len(params) < 4:
                 ircobj.send_reply('ERR_NEEDMOREPARAMS', 'USER')
@@ -843,9 +822,8 @@ class ClientConnection(_BaseConnection):
             
             return Event.Handled
 
-        irc_USER = staticmethod(irc_USER)
-
         # NICK shroud_
+        @staticmethod
         def irc_NICK(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 ircobj.send_reply('ERR_NONICKNAMEGIVEN', 'NICK')
@@ -869,9 +847,8 @@ class ClientConnection(_BaseConnection):
 
             return Event.Handled
 
-        irc_NICK = staticmethod(irc_NICK)
-
         # PASS topsecret
+        @staticmethod
         def irc_PASS(evt, ircobj, command, nickobj, params):
             if len(params) < 1:
                 ircobj.send_reply('ERR_NEEDMOREPARAMS', 'PASS')
@@ -887,16 +864,14 @@ class ClientConnection(_BaseConnection):
             
             return Event.Handled
 
-        irc_PASS = staticmethod(irc_PASS)
-
+        @staticmethod
         def irc_QUIT(evt, ircobj, command, nickobj, params):
             ircobj.close('Goodbye.')
             
             return Event.Handled
 
-        irc_QUIT = staticmethod(irc_QUIT)
-
         # VERSION
+        @staticmethod
         def irc_VERSION(evt, ircobj, command, nickobj, params):
             if len(params) > 0 or not ircobj.registered:
                 return Event.Continue
@@ -925,9 +900,8 @@ class ClientConnection(_BaseConnection):
 
             return Event.Handled
 
-        irc_VERSION = staticmethod(irc_VERSION)
-
         # MOTD
+        @staticmethod
         def irc_MOTD(evt, ircobj, command, nickobj, params):
             if not ircobj.registered:
                 return Event.Continue
@@ -944,9 +918,8 @@ class ClientConnection(_BaseConnection):
                 
             return Event.Handled
 
-        irc_MOTD = staticmethod(irc_MOTD)
-        
         # NAMES #channel
+        @staticmethod
         def irc_NAMES(evt, ircobj, command, nickobj, params):
             if len(params) != 1 or ',' in params[0] or not ircobj.registered:
                 return Event.Continue
@@ -996,9 +969,8 @@ class ClientConnection(_BaseConnection):
             
             return Event.Handled
             
-        irc_NAMES = staticmethod(irc_NAMES)
-
         # TOPIC #channel
+        @staticmethod
         def irc_TOPIC(evt, ircobj, command, nickobj, params):
             if len(params) != 1 or not ircobj.registered:
                 return Event.Continue
@@ -1022,8 +994,6 @@ class ClientConnection(_BaseConnection):
                 
             return Event.Handled
 
-        irc_TOPIC = staticmethod(irc_TOPIC)
-        
 # Register built-in handlers for the ClientConnection class        
 ClientConnection.CommandHandlers.register_handlers()
 

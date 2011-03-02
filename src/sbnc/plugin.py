@@ -51,6 +51,7 @@ class ServiceRegistry(object):
     
     services = {}
 
+    @staticmethod
     def register(cls):
         """
         Registers a new service.
@@ -66,8 +67,7 @@ class ServiceRegistry(object):
         cls.instance = serviceobj
         ServiceRegistry.services[cls.package] = serviceobj
         
-    register = staticmethod(register)
-        
+    @staticmethod
     def get(name):
         """
         Retrieves a service object.
@@ -77,5 +77,3 @@ class ServiceRegistry(object):
             return ServiceRegistry.services[name]
         except KeyError:
             return None
-        
-    get = staticmethod(get)

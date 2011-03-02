@@ -171,6 +171,7 @@ class ProxyUser(object):
         
         self.irc_connection.start()
 
+    @staticmethod
     def _irc_closed_handler(evt, ircobj):
         self = ircobj.owner
 
@@ -184,8 +185,7 @@ class ProxyUser(object):
             
         self.irc_connection = None
         
-    _irc_closed_handler = staticmethod(_irc_closed_handler)
-
+    @staticmethod
     def _client_closed_handler(evt, clientobj):
         self = clientobj.owner
         
@@ -194,8 +194,7 @@ class ProxyUser(object):
         
         self.client_connections.remove(clientobj)
         
-    _client_closed_handler = staticmethod(_client_closed_handler)
-
+    @staticmethod
     def _client_registration_handler(evt, clientobj):
         self = clientobj.owner
         
@@ -214,8 +213,7 @@ class ProxyUser(object):
             clientobj.channels = self.irc_connection.channels
             clientobj.nicks = self.irc_connection.nicks
 
-    _client_registration_handler = staticmethod(_client_registration_handler)
-
+    @staticmethod
     def _client_post_registration_handler(evt, clientobj):
         self = clientobj.owner
         
@@ -227,8 +225,7 @@ class ProxyUser(object):
             clientobj.process_line('TOPIC %s' % (channel))
             clientobj.process_line('NAMES %s' % (channel))
             
-    _client_post_registration_handler = staticmethod(_client_post_registration_handler)
-
+    @staticmethod
     def _irc_registration_handler(evt, ircobj):
         self = ircobj.owner
 
@@ -237,8 +234,7 @@ class ProxyUser(object):
                 clientobj.send_message('NICK', self.irc_connection.me.nick, prefix=clientobj.me)
                 clientobj.me.nick = self.irc_connection.me.nick
 
-    _irc_registration_handler = staticmethod(_irc_registration_handler)
-
+    @staticmethod
     def _client_command_handler(evt, clientobj, command, nickobj, params):
         self = clientobj.owner
         
@@ -257,8 +253,7 @@ class ProxyUser(object):
         
         return Event.Handled
 
-    _client_command_handler = staticmethod(_client_command_handler)
-
+    @staticmethod
     def _irc_command_handler(evt, ircobj, command, nickobj, params):
         self = ircobj.owner
         
@@ -282,8 +277,6 @@ class ProxyUser(object):
             clientobj.send_message(command, prefix=mapped_prefix, *params)
 
         return Event.Handled
-
-    _irc_command_handler = staticmethod(_irc_command_handler)
 
     def check_password(self, password):
         return 'password' in self.config and self.config['password'] == password
