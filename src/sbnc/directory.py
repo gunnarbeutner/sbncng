@@ -118,6 +118,7 @@ class Node(_ModelBase):
         """Removes the specified child node."""
 
         self._session.query(Node).filter_by(name=name, parent=self).delete()
+        self._session.commit()
 
     def get(self, key, default_value):
         """Retrieves the value associated with the specified attribute."""
@@ -156,6 +157,7 @@ class Node(_ModelBase):
         """Removes all attributes."""
 
         self._session.query(Attribute).filter_by(node=self).delete()
+        self._session.commit()
 
     def __repr__(self):
         return "<node name %s, parent %s>" % \
