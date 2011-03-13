@@ -778,12 +778,12 @@ class ClientConnection(_BaseConnection):
             self.close('Authentication failed: Invalid user credentials.')
             return
 
-        _BaseConnection.register_user(self)
-
         self._password = None
 
         self.send_reply('RPL_WELCOME', format_args=(str(self.me)))
         
+        _BaseConnection.register_user(self)
+
         # TODO: missing support for RPL_YOURHOST, RPL_CREATED and RPL_MYINFO
 
         self.process_line('VERSION')
