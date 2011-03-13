@@ -87,7 +87,7 @@ class AdminCommandPlugin(Plugin):
         
     def _cmd_admin_handler(self, clientobj, params, notice):
         if len(params) < 1:
-            ui_svc.send_sbnc_reply(clientobj, 'Syntax: admin <username>')
+            ui_svc.send_sbnc_reply(clientobj, 'Syntax: admin <username>', notice)
             return
         
         user = params[0]
@@ -109,7 +109,7 @@ class AdminCommandPlugin(Plugin):
 
     def _cmd_broadcast_handler(self, clientobj, params, notice):
         if len(params) < 1:
-            ui_svc.send_sbnc_reply(clientobj, 'Syntax: broadcast <text>')
+            ui_svc.send_sbnc_reply(clientobj, 'Syntax: broadcast <text>', notice)
             return
         
         self.broadcast(' '.join(params))       
@@ -120,7 +120,7 @@ class AdminCommandPlugin(Plugin):
         
     def _cmd_deluser_handler(self, clientobj, params, notice):
         if len(params) < 1:
-            ui_svc.send_sbnc_reply(clientobj, 'Syntax: deluser <username>')
+            ui_svc.send_sbnc_reply(clientobj, 'Syntax: deluser <username>', notice)
             return
 
         user = params[0]
@@ -139,7 +139,7 @@ class AdminCommandPlugin(Plugin):
         
     def _cmd_resetpass_handler(self, clientobj, params, notice):
         if len(params) < 1:
-            ui_svc.send_sbnc_reply(clientobj, 'Syntax: resetpass <username> [password]')
+            ui_svc.send_sbnc_reply(clientobj, 'Syntax: resetpass <username> [password]', notice)
             return
         
         user = params[0]
@@ -164,7 +164,7 @@ class AdminCommandPlugin(Plugin):
                 
     def _cmd_simul_handler(self, clientobj, params, notice):
         if len(params) < 2:
-            ui_svc.send_sbnc_reply(clientobj, 'Syntax: simul <username> <command>')
+            ui_svc.send_sbnc_reply(clientobj, 'Syntax: simul <username> <command>', notice)
             return
         
         # TODO: implement
@@ -173,7 +173,7 @@ class AdminCommandPlugin(Plugin):
         
     def _cmd_suspend_handler(self, clientobj, params, notice):
         if len(params) < 1:
-            ui_svc.send_sbnc_reply(clientobj, 'Syntax: suspend <username> [reason]')
+            ui_svc.send_sbnc_reply(clientobj, 'Syntax: suspend <username> [reason]', notice)
             return
         
         # TODO: implement
@@ -182,7 +182,7 @@ class AdminCommandPlugin(Plugin):
         
     def _cmd_unadmin_handler(self, clientobj, params, notice):
         if len(params) < 1:
-            ui_svc.send_sbnc_reply(clientobj, 'Syntax: unadmin <username>')
+            ui_svc.send_sbnc_reply(clientobj, 'Syntax: unadmin <username>', notice)
             return
         
         user = params[0]
@@ -199,7 +199,7 @@ class AdminCommandPlugin(Plugin):
         
     def _cmd_unsuspend_handler(self, clientobj, params, notice):
         if len(params) < 1:
-            ui_svc.send_sbnc_reply(clientobj, 'Syntax: unsuspend <username>')
+            ui_svc.send_sbnc_reply(clientobj, 'Syntax: unsuspend <username>', notice)
             return
         
         # TODO: implement
