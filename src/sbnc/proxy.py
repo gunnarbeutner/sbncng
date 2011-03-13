@@ -236,6 +236,9 @@ class ProxyUser(object):
         if self.irc_connection == None:
             return
         
+        if self.irc_connection.away:
+            clientobj.send_message('306', 'You have been marked as being away')
+        
         for channel in self.irc_connection.channels:
             clientobj.send_message('JOIN', channel, prefix=self.irc_connection.me)
             clientobj.process_line('TOPIC %s' % (channel))

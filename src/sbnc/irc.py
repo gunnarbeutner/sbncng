@@ -102,6 +102,7 @@ class _BaseConnection(object):
         self.server = Nick(self)
 
         self.registered = False
+        self.away = False
         self.realname = None
         self.usermodes = ''
 
@@ -340,6 +341,10 @@ class IRCConnection(_BaseConnection):
                                                               Event.PreObserver, match_command('TOPIC'))
             IRCConnection.command_received_event.add_listener(IRCConnection.CommandHandlers.irc_329,
                                                               Event.PreObserver, match_command('329'))
+            IRCConnection.command_received_event.add_listener(IRCConnection.CommandHandlers.irc_305,
+                                                              Event.PreObserver, match_command('305'))
+            IRCConnection.command_received_event.add_listener(IRCConnection.CommandHandlers.irc_306,
+                                                              Event.PreObserver, match_command('306'))
 
         # PING :wineasy1.se.quakenet.org
         @staticmethod
@@ -639,7 +644,7 @@ class IRCConnection(_BaseConnection):
             channelobj.topic_nick = copy(nickobj)
             channelobj.topic_time = datetime.now()
             channelobj.has_topic = True
-        
+                
         # :underworld2.no.quakenet.org 329 shroud #sbfl 1233690341
         @staticmethod
         def irc_329(evt, ircobj, command, nickobj, params):
@@ -655,7 +660,17 @@ class IRCConnection(_BaseConnection):
             channelobj = ircobj.channels[channel]
             
             channelobj.creation_time = datetime.fromtimestamp(int(ts))
-            
+        
+        # :underworld2.no.quakenet.org 305 shroud :You are no longer marked as being away
+        @staticmethod
+        def irc_305(evt, ircobj, command, nickobj, params):
+            ircobj.away = False
+        
+        # :underworld2.no.quakenet.org 306 shroud :You have been marked as being away
+        @staticmethod
+        def irc_306(evt, ircobj, command, nickobj, params):
+            ircobj.away = True
+        
 # Register built-in handlers for the IRCConnection class        
 IRCConnection.CommandHandlers.register_handlers()
 
