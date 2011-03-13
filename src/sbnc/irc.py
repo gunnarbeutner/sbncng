@@ -681,6 +681,8 @@ class ClientConnection(_BaseConnection):
     rpls = {
         'RPL_WELCOME': (1, 'Welcome to the Internet Relay Network %s'),
         'RPL_ISUPPORT': (5, 'are supported by this server'),
+        'RPL_UNAWAY': (305, 'You are no longer marked as being away'),
+        'RPL_NOWAWAY': (306, 'You have been marked as being away'),
         'RPL_NOTOPIC': (331, 'No topic is set'),
         'RPL_TOPIC': (332, None),
         'RPL_TOPICWHOTIME': (333, None),
